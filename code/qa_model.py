@@ -29,7 +29,35 @@ def get_optimizer(opt):
         assert (False)
     return optfn
 
-class LSTMAttnCell(tf.nn.rnn_cell.LSTMCell):
+def linear(input_, output_size, scope=None):
+    '''
+    Linear map: output[k] = sum_i(Matrix[k, i] * args[i] ) + Bias[k]
+    Args:
+        args: a tensor or a list of 2D, batch x n, Tensors.
+    output_size: int, second dimension of W[i].
+    scope: VariableScope for the created subgraph; defaults to "Linear".
+  Returns:
+    A 2D Tensor with shape [batch x output_size] equal to
+    sum_i(args[i] * W[i]), where W[i]s are newly created matrices.
+  Raises:
+    ValueError: if some of the arguments has unspecified or wrong shape.
+  '''
+
+    shape = input_.get_shape().as_list()
+    if len(shape) != 2:
+        raise ValueError("Linear is expecting 2D arguments: %s" % str(shape))
+    if not shape[1]:
+        raise ValueError("Linear expects shape[1] of arguments: %s" % str(shape))
+    input_size = shape[1]
+
+    # Now the computation.
+    with tf.variable_scope(scope or "SimpleLinear"):
+        matrix = tf.get_variable("Matrix", [output_size, input_size], dtype=input_.dtype)
+        bias_term = tf.get_variable("Bias", [output_size], dtype=input_.dtype)
+
+    return tf.matmul(input_, tf.transpose(matrix)) + bias_term
+
+class LSTMAttnCell(tf.contrib.rnn.LSTMCell):
     def __init__(self, num_units, encoder_output, scope=None):
         self.hs = encoder_output
         super(LSTMAttnCell,self).__init__(num_units)
@@ -39,16 +67,16 @@ class LSTMAttnCell(tf.nn.rnn_cell.LSTMCell):
         lstm_out, lstm_state = super(LSTMAttnCell,self).__call__(inputs, state, scope)
         with vs.variable_scope(scope or type(self).__name__):
             with vs.variable_scope("Attn"):
-                ht = tf.nn.rnn_cell._linear(lstm_out, self._num_units, True, 1.0)
+                ht = linear(lstm_out, self._num_units)
                 ht = tf.expand_dims(ht, axis=1)
             scores = tf.reduce_sum(self.hs*ht, reduction_indices=2, keep_dims=True)
             scores = tf.exp(scores - tf.reduce_max(scores, reduction_indices=1, keep_dims=True))
             scores = scores / (1e-6 + tf.reduce_sum(scores, reduction_indices=1, keep_dims=True))
             context = tf.reduce_sum(self.hs*scores, reduction_indices=1)
             with vs.variable_scope("AttnConcat"):
-                out = tf.nn.relu(tf.nn.rnn_cell._linear([context, lstm_out], self._num_units, True, 1.0))
+                out = tf.nn.relu(linear(tf.concat([context, lstm_out],1), self._num_units))
 
-        return (out, tf.nn.rnn_cell.LSTMStateTuple(out,out))
+        return (out, tf.contrib.rnn.LSTMStateTuple(out,out))
 
 class Encoder(object):
     def __init__(self, size, vocab_dim):
@@ -64,6 +92,9 @@ class Encoder(object):
 
     def encode_questions(self, inputs, masks, encoder_state_input):
         """
+        This is an encoder for question. Runing biLSTM over question.
+        """
+        """
         In a generalized encode function, you pass in your inputs,
         masks, and an initial
         hidden state input into this function.
@@ -78,11 +109,12 @@ class Encoder(object):
         """
         if encoder_state_input == None:
             encoder_state_input = tf.zeros([1, self.size])
+
         cell_size = self.size
         inputs_shape = tf.shape(inputs)
         batch_size = inputs_shape[0]
-        cell_fw = tf.nn.rnn_cell.BasicLSTMCell(self.size)
-        cell_bw = tf.nn.rnn_cell.BasicLSTMCell(self.size)
+        cell_fw = tf.contrib.rnn.BasicLSTMCell(self.size)
+        cell_bw = tf.contrib.rnn.BasicLSTMCell(self.size)
 
         with tf.variable_scope("bi_LSTM"):
             outputs, final_state = tf.nn.bidirectional_dynamic_rnn(
@@ -96,8 +128,8 @@ class Encoder(object):
 
         final_state_fw = final_state[0].h
         final_state_bw = final_state[1].h
-        final_state = tf.concat(1, [final_state_fw, final_state_bw])
-        states = tf.concat(2, outputs)
+        final_state = tf.concat([final_state_fw, final_state_bw],1)
+        states = tf.concat(outputs,2)
         return final_state, states
 
     def encode_w_attn(self, inputs, masks, prev_states, scope="", reuse=False):
@@ -105,7 +137,7 @@ class Encoder(object):
         Run a BiLSTM over the context paragraph conditioned on the question representation.
         """
         cell_size = self.size
-        prev_states_fw, prev_states_bw = tf.split(2, 2, prev_states)
+        prev_states_fw, prev_states_bw = tf.split(prev_states,2,2)
         attn_cell_fw = LSTMAttnCell(cell_size, prev_states_fw)
         attn_cell_bw = LSTMAttnCell(cell_size, prev_states_bw)
         with vs.variable_scope(scope, reuse):
@@ -119,8 +151,8 @@ class Encoder(object):
                                             )
         final_state_fw = final_state[0].h
         final_state_bw = final_state[1].h
-        final_state = tf.concat(1, [final_state_fw, final_state_bw])
-        states = tf.concat(2, outputs)
+        final_state = tf.concat([final_state_fw, final_state_bw],1)
+        states = tf.concat(outputs, 2)
         return final_state, states
 
 
@@ -130,7 +162,7 @@ class Decoder(object):
         self.output_size = 2*output_size
 
     def match_LASTM(self,questions_states, paragraph_states, question_length, paragraph_length):
-        cell = tf.nn.rnn_cell.LSTMCell(num_units=self.output_size, state_is_tuple=False)
+        cell = tf.contrib.rnn.LSTMCell(num_units=self.output_size, state_is_tuple=False)
         fw_states = []
         with tf.variable_scope("Forward_Match-LSTM"):
             W_q = tf.get_variable("W_q", shape=(self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
@@ -148,13 +180,13 @@ class Decoder(object):
                 X_ = tf.reshape(questions_states, [-1, question_length, self.output_size])
                 p_z = tf.matmul(atten, X_)
                 p_z = tf.reshape(p_z, [-1, self.output_size])
-                z = tf.concat(1,[p_state, p_z])
+                z = tf.concat([p_state, p_z],1)
                 state, o = cell(z, state)
                 fw_states.append(state)
                 tf.get_variable_scope().reuse_variables()
-        fw_states = tf.pack(fw_states)
+        fw_states = tf.stack(fw_states)
         fw_states = tf.transpose(fw_states, perm=(1,0,2))
-        cell = tf.nn.rnn_cell.LSTMCell(num_units=self.output_size, state_is_tuple=False)
+        cell = tf.contrib.rnn.LSTMCell(num_units=self.output_size, state_is_tuple=False)
         bk_states = []
         with tf.variable_scope("Backward_Match-LSTM"):
             W_q = tf.get_variable("W_q", shape=(self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
@@ -172,13 +204,13 @@ class Decoder(object):
                 X_ = tf.reshape(questions_states, [-1, question_length, self.output_size])
                 p_z = tf.matmul(atten, X_)
                 p_z = tf.reshape(p_z, [-1, self.output_size])
-                z = tf.concat(1,[p_state, p_z])
+                z = tf.concat([p_state, p_z],1)
                 state, o = cell(z, state)
                 bk_states.append(state )
                 tf.get_variable_scope().reuse_variables()
-        bk_states = tf.pack(bk_states)
+        bk_states = tf.stack(bk_states)
         bk_states = tf.transpose(bk_states, perm=(1,0,2))
-        knowledge_rep =  tf.concat(2,[fw_states,bk_states])
+        knowledge_rep =  tf.concat([fw_states,bk_states],2)
         return knowledge_rep
 
 
@@ -195,7 +227,7 @@ class Decoder(object):
         """
         output_size = self.output_size
         # predict start index
-        cell = tf.nn.rnn_cell.LSTMCell(num_units=output_size, state_is_tuple=False)
+        cell = tf.contrib.rnn.LSTMCell(num_units=output_size, state_is_tuple=False)
         beta_s = []
         with tf.variable_scope("Boundary-LSTM_start"):
             V = tf.get_variable("V", shape=(2*output_size, output_size), initializer=tf.contrib.layers.xavier_initializer())
@@ -213,13 +245,13 @@ class Decoder(object):
                 z = tf.matmul(probab_s, H_r)
                 state, _ = cell(z, state, scope="Boundary-LSTM_start")
                 tf.get_variable_scope().reuse_variables()
-        beta_s = tf.pack(beta_s)
+        beta_s = tf.stack(beta_s)
         beta_s = tf.transpose(beta_s, perm=(1,0,2))
 
         # predict end index; beta_e is the probability distribution over the paragraph words
         beta_e=[]
         with tf.variable_scope("Boundary-LSTM_end"):
-            cell = tf.nn.rnn_cell.LSTMCell(num_units=output_size, state_is_tuple= False)
+            cell = tf.contrib.rnn.LSTMCell(num_units=output_size, state_is_tuple= False)
             V = tf.get_variable("V", shape=(2*output_size, output_size), initializer=tf.contrib.layers.xavier_initializer())
             b_a = tf.get_variable("b_a", shape=(1, output_size), initializer=tf.contrib.layers.xavier_initializer())
             W_a = tf.get_variable("W_a", shape=(output_size, output_size), initializer=tf.contrib.layers.xavier_initializer())
@@ -235,7 +267,7 @@ class Decoder(object):
                 z = tf.matmul(probab_e, H_r)
                 state, _ = cell(z, state, scope="Boundary-LSTM_start")
                 tf.get_variable_scope().reuse_variables()
-        beta_e = tf.pack(beta_e)
+        beta_e = tf.stack(beta_e)
         beta_e = tf.transpose(beta_e, perm=(1,0,2))
         return beta_s, beta_e
 
@@ -270,6 +302,8 @@ class QASystem(object):
             self.setup_system()
             self.preds = self.decoder.decode(self.knowledge_rep, self.p_max_length)
             self.loss = self.setup_loss(self.preds)
+            # self.train_op_start = tf.train.AdamOptimizer()
+            # self.train_op_end = tf.train.AdamOptimizer()
 
         # ==== set up training/updating procedure ====
 
@@ -285,6 +319,10 @@ class QASystem(object):
         encoded_q, self.q_states= self.encoder.encode_questions(self.q_embeddings, self.q_mask_placeholder, None)
         encoded_p, self.p_states = self.encoder.encode_w_attn(self.p_embeddings, self.p_mask_placeholder, self.q_states, scope="", reuse=False)
 
+        print("This is setup system")
+        print(self.q_states.shape)
+        print(self.p_states.shape)
+        print("len of q : {0}, len of p : {1}".format(self.q_max_length, self.p_max_length))
         self.knowledge_rep = self.decoder.match_LASTM(self.q_states,self.p_states, self.q_max_length, self.p_max_length)
 
     def setup_loss(self, preds):
@@ -294,10 +332,14 @@ class QASystem(object):
         """
         preds = np.array(preds)
         with vs.variable_scope("start_index_loss"):
-            loss_tensor = tf.boolean_mask(tf.nn.sparse_softmax_cross_entropy_with_logits(preds[:,0], self.start_labels_placeholder),self.p_mask_placeholder)
+            # print(preds)
+            # print(len(self.start_labels_placeholder))
+            # print(self.start_labels_placeholder[1])
+            loss_tensor = tf.boolean_mask(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=preds[0], labels=self.start_labels_placeholder),self.p_mask_placeholder)
             start_index_loss = tf.reduce_mean(loss_tensor, 0)
         with vs.variable_scope("end_index_loss"):
-            loss_tensor = tf.boolean_mask(tf.nn.sparse_softmax_cross_entropy_with_logits(preds[:,1], self.end_labels_placeholder),self.p_mask_placeholder)
+
+            loss_tensor = tf.boolean_mask(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=preds[1], labels=self.end_labels_placeholder),self.p_mask_placeholder)
             end_index_loss = tf.reduce_mean(loss_tensor, 0)
         self.loss = [start_index_loss, end_index_loss]
 
@@ -342,11 +384,6 @@ class QASystem(object):
         return start_index_loss, end_index_loss
 
     def test(self, session, valid_x, valid_y):
-        """
-        in here you should compute a cost for your validation set
-        and tune your hyperparameters according to the validation set performance
-        :return:
-        """
         input_feed = {}
 
         output_feed = []
@@ -389,8 +426,10 @@ class QASystem(object):
 
     def train_on_batch(self, session, question_batch, context_batch, label_batch):
         feed_dict = self.create_feed_dict(question_batch, context_batch, label_batch);
-        _, loss = session.run([self.train_op, self.loss], feed_dict=feed_dict)
-        return loss
+
+        loss_start, loss_end = session.run(self.optimize, feed_dict=feed_dict)
+
+        return loss_start
 
     def run_epoch(self, sess, inputs):
         """Runs an epoch of training.

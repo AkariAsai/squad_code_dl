@@ -51,7 +51,7 @@ def initialize_vocabulary(vocabulary_path):
         rev_vocab = []
         with gfile.GFile(vocabulary_path, mode="r") as f:
             rev_vocab.extend(f.readlines())
-        rev_vocab = [line.strip('\n') for line in rev_vocab]
+        rev_vocab = [line.decode('utf8').strip('\n') for line in rev_vocab]
         vocab = dict([(x, y) for (y, x) in enumerate(rev_vocab)])
         return vocab, rev_vocab
     else:
@@ -148,7 +148,7 @@ def pad_sequences(data, p_length, q_length):
         data: is a list of (sentence, labels) tuples. @sentence is a list
             containing the words in the sentence and @label is a list of
             output labels. Each word is itself a list of
-            @n_features features. 
+            @n_features features.
         max_length: the desired length for all input/output sequences.
     Returns:
         a new list of data points of the structure (sentence', labels', mask).
@@ -158,7 +158,7 @@ def pad_sequences(data, p_length, q_length):
     ret = {}
     ret['Questions'] = []
     ret['Questions_masks'] = []
-    ret['Paragraphs'] = [] 
+    ret['Paragraphs'] = []
     ret['Paragraphs_masks'] = []
 
     for iq in range(len(data['Questions'])):
@@ -185,9 +185,9 @@ def pad_sequences(data, p_length, q_length):
     num_examples = len(ret['Questions'])
     ret['Questions'] = np.array(ret['Questions']).reshape((num_examples,q_length))
     ret['Questions_masks'] = np.array(ret['Questions_masks']).reshape((num_examples,q_length))
-    ret['Paragraphs'] = np.array(ret['Paragraphs']).reshape((num_examples,p_length)) 
-    ret['Paragraphs_masks'] = np.array(ret['Paragraphs_masks']).reshape((num_examples,p_length)) 
-    ret['Labels']= np.array(data['Labels']).reshape((num_examples,2))      
+    ret['Paragraphs'] = np.array(ret['Paragraphs']).reshape((num_examples,p_length))
+    ret['Paragraphs_masks'] = np.array(ret['Paragraphs_masks']).reshape((num_examples,p_length))
+    ret['Labels']= np.array(data['Labels']).reshape((num_examples,2))
     return ret
 
 
@@ -206,16 +206,8 @@ if __name__ == '__main__':
                        pjoin(args.source_dir, "val.question")])
     vocab, rev_vocab = initialize_vocabulary(pjoin(args.vocab_dir, "vocab.dat"))
 
-    # ======== Trim Distributed Word Representation =======
-    # If you use other word representations, you should change the code below
-
     process_glove(args, rev_vocab, args.source_dir + "/glove.trimmed.{}".format(args.glove_dim),
                   random_init=args.random_init)
-
-    # ======== Creating Dataset =========
-    # We created our data files seperately
-    # If your model loads data differently (like in bulk)
-    # You should change the below code
 
     x_train_dis_path = train_path + ".ids.context"
     y_train_ids_path = train_path + ".ids.question"

@@ -53,10 +53,13 @@ def initialize_model(session, model, train_dir):
 def initialize_vocab(vocab_path):
     if tf.gfile.Exists(vocab_path):
         rev_vocab = []
-        with tf.gfile.GFile(vocab_path, mode="rb") as f:
+        with tf.gfile.GFile(vocab_path, mode="r") as f:
             rev_vocab.extend(f.readlines())
+        # print(vocab_path)
+        # print(rev_vocab)
         rev_vocab = [line.strip('\n') for line in rev_vocab]
         vocab = dict([(x, y) for (y, x) in enumerate(rev_vocab)])
+        # print(vocab)
         return vocab, rev_vocab
     else:
         raise ValueError("Vocabulary file %s not found.", vocab_path)
