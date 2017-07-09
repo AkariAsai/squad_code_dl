@@ -115,6 +115,9 @@ class Encoder(object):
                  It can be context-level representation, word-level representation,
                  or both.
         """
+        print("Encode start")
+        print("This is questions input")
+        print(inputs)
         if encoder_state_input == None:
             encoder_state_input = tf.zeros([1, self.size])
 
@@ -138,14 +141,22 @@ class Encoder(object):
         final_state_bw = final_state[1].h
         final_state = tf.concat([final_state_fw, final_state_bw], 1)
         states = tf.concat(outputs, 2)
+        print("This is the output.")
+        print(final_state)
         return final_state, states
 
     def encode_w_attn(self, inputs, masks, prev_states, scope="", reuse=False):
         """
         Run a BiLSTM over the context paragraph conditioned on the question representation.
         """
+        print("This is paragraph encoder.The first one is onputs, second is prev_state/")
+        print(prev_states)
+        print()
+        print(prev_states)
+
         cell_size = self.size
         prev_states_fw, prev_states_bw = tf.split(prev_states, 2, 2)
+
         attn_cell_fw = LSTMAttnCell(cell_size, prev_states_fw)
         attn_cell_bw = LSTMAttnCell(cell_size, prev_states_bw)
         with vs.variable_scope(scope, reuse):
@@ -157,10 +168,13 @@ class Encoder(object):
                 inputs=inputs,
                 time_major=False
             )
+
         final_state_fw = final_state[0].h
         final_state_bw = final_state[1].h
         final_state = tf.concat([final_state_fw, final_state_bw], 1)
         states = tf.concat(outputs, 2)
+        print("This is encoded paragraph.")
+        print(states)
         return final_state, states
 
 
@@ -169,9 +183,14 @@ class Decoder(object):
         self.output_size = 2 * output_size
 
     def match_LASTM(self, questions_states, paragraph_states, question_length, paragraph_length):
+        '''
+        This is matchLSTM for decode.
+        '''
+
         cell = tf.contrib.rnn.LSTMCell(
             num_units=self.output_size, state_is_tuple=False)
         fw_states = []
+
         with tf.variable_scope("Forward_Match-LSTM"):
             W_q = tf.get_variable("W_q", shape=(
                 self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
@@ -184,12 +203,13 @@ class Decoder(object):
             b = tf.get_variable("b", shape=(
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
             state = tf.zeros([1, self.output_size])
+
             for time_step in range(paragraph_length):
                 p_state = paragraph_states[:, time_step, :]
                 X_ = tf.reshape(questions_states, [-1, self.output_size])
                 G = tf.nn.tanh(tf.matmul(X_, W_q) + tf.matmul(p_state,
                                                               W_r) + tf.matmul(state, W_r) + b_p)  # batch_size*Q,l
-                atten = tf.nn.softmax(tf.matmul(G, w) + b)  # batch_size*Q,1
+                atten = tf.nn.softmax(tf.matmul(G, w) + b)
                 atten = tf.reshape(atten, [-1, 1, question_length])
                 X_ = tf.reshape(questions_states,
                                 [-1, question_length, self.output_size])
@@ -199,11 +219,13 @@ class Decoder(object):
                 state, o = cell(z, state)
                 fw_states.append(state)
                 tf.get_variable_scope().reuse_variables()
+
         fw_states = tf.stack(fw_states)
         fw_states = tf.transpose(fw_states, perm=(1, 0, 2))
         cell = tf.contrib.rnn.LSTMCell(
             num_units=self.output_size, state_is_tuple=False)
         bk_states = []
+
         with tf.variable_scope("Backward_Match-LSTM"):
             W_q = tf.get_variable("W_q", shape=(
                 self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
@@ -216,12 +238,13 @@ class Decoder(object):
             b = tf.get_variable("b", shape=(
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
             state = tf.zeros([1, self.output_size])
+
             for time_step in range(paragraph_length):
                 p_state = paragraph_states[:, time_step, :]
                 X_ = tf.reshape(questions_states, [-1, self.output_size])
                 G = tf.nn.tanh(tf.matmul(X_, W_q) + tf.matmul(p_state,
                                                               W_r) + tf.matmul(state, W_r) + b_p)  # batch_size*Q,l
-                atten = tf.nn.softmax(tf.matmul(G, w) + b)  # batch_size*Q,1
+                atten = tf.nn.softmax(tf.matmul(G, w) + b)
                 atten = tf.reshape(atten, [-1, 1, question_length])
                 X_ = tf.reshape(questions_states,
                                 [-1, question_length, self.output_size])
@@ -231,9 +254,11 @@ class Decoder(object):
                 state, o = cell(z, state)
                 bk_states.append(state)
                 tf.get_variable_scope().reuse_variables()
+
         bk_states = tf.stack(bk_states)
         bk_states = tf.transpose(bk_states, perm=(1, 0, 2))
         knowledge_rep = tf.concat([fw_states, bk_states], 2)
+
         return knowledge_rep
 
     def decode(self, knowledge_rep, paragraph_length):
@@ -248,7 +273,7 @@ class Decoder(object):
         :return:
         """
         output_size = self.output_size
-        # predict start index
+
         cell = tf.contrib.rnn.LSTMCell(
             num_units=output_size, state_is_tuple=False)
         beta_s = []
@@ -343,10 +368,15 @@ class QASystem(object):
 
         # ==== assemble pieces ====
         with tf.variable_scope("qa", initializer=tf.uniform_unit_scaling_initializer(1.0)):
+            print("setting up embeddings....")
             self.setup_embeddings()
+            print("setting up systems...")
             self.setup_system()
+            print("decoding")
             self.preds = self.decoder.decode(
                 self.knowledge_rep, self.p_max_length)
+            print("predds")
+            print(self.preds)
             self.loss = self.setup_loss(self.preds)
             # self.train_op_start = tf.train.AdamOptimizer()
             # self.train_op_end = tf.train.AdamOptimizer()
@@ -368,6 +398,7 @@ class QASystem(object):
         print("This is setup system")
         print(self.q_states.shape)
         print(self.p_states.shape)
+
         print("len of q : {0}, len of p : {1}".format(
             self.q_max_length, self.p_max_length))
         self.knowledge_rep = self.decoder.match_LASTM(
@@ -379,16 +410,17 @@ class QASystem(object):
         :return:
         """
         preds = np.array(preds)
+        print("setting up loss.")
         with vs.variable_scope("start_index_loss"):
             loss_tensor = tf.boolean_mask(tf.nn.sparse_softmax_cross_entropy_with_logits(
                 logits=preds[0], labels=self.start_labels_placeholder), self.p_mask_placeholder)
             start_index_loss = tf.reduce_mean(loss_tensor, 0)
         with vs.variable_scope("end_index_loss"):
-
             loss_tensor = tf.boolean_mask(tf.nn.sparse_softmax_cross_entropy_with_logits(
                 logits=preds[1], labels=self.end_labels_placeholder), self.p_mask_placeholder)
             end_index_loss = tf.reduce_mean(loss_tensor, 0)
-        self.loss = [start_index_loss, end_index_loss]
+
+        return [start_index_loss, end_index_loss]
 
     def setup_embeddings(self):
         """
@@ -472,7 +504,10 @@ class QASystem(object):
         """
         feed_dict = {}
         print("self.placeholder: {0}".format(self.p_placeholder))
-        print("question_batch: {0}".format(question_batch))
+        print("self.qlaceholder: {0}".format(self.q_placeholder))
+        print("num of question, len of question, : {0}, {1}".format(len(question_batch), len(question_batch[0])))
+        print("num of paragraph, len of paragraph, : {0}, {1}".format(len(context_batch), len(context_batch[0])))
+        #print("question_batch: {0}".format(question_batch))
         feed_dict[self.q_placeholder] = question_batch
         feed_dict[self.p_placeholder] = context_batch
         if labels_batch is not None:
@@ -481,20 +516,24 @@ class QASystem(object):
         return feed_dict
 
     def train_on_batch(self, session, question_batch, context_batch, label_batch):
-        feed_dict = self.create_feed_dict(
+        input_feed = self.create_feed_dict(
             question_batch, context_batch, label_batch)
+        #input_feed[self.dropout_placeholder] = dropout
+
+        if self.loss is None:
+            self.loss = [0, 0]
 
         train_op_start = tf.train.AdamOptimizer(
-            self.config.learning_rate).minimize(self.start_index_loss)
-        output_feed = [train_op_start, self.start_index_loss]
+            self.config.learning_rate).minimize(self.loss[0])
+        output_feed = [train_op_start, self.loss[0]]
         start_index_pred = session.run(output_feed, input_feed)
 
         train_op_end = tf.train.AdamOptimizer(
-            self.config.learning_rate).minimize(self.end_index_loss)
-        output_feed = [train_op_end, self.end_index_loss]
+            self.config.learning_rate).minimize(self.loss[1])
+        output_feed = [train_op_end, self.loss[1]]
         end_index_pred = session.run(output_feed, input_feed)
 
-        return loss_start
+        return self.loss[0]
 
     def run_epoch(self, sess, inputs):
         """Runs an epoch of training.
@@ -608,7 +647,9 @@ class QASystem(object):
         toc = time.time()
         logging.info("Number of params: %d (retreival took %f secs)" %
                      (num_params, toc - tic))
+        train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train', session.graph)
         best_score = 0.
+        losses = []
         for epoch in range(self.config.epochs):
             logging.info("Epoch %d out of %d", epoch + 1, self.config.epochs)
             logging.info("Best score so far: " + str(best_score))
