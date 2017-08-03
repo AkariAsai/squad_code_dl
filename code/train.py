@@ -46,6 +46,7 @@ tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat",
                            "Path to vocab file (default: ./data/squad/vocab.dat)")
 tf.app.flags.DEFINE_string(
     "embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
+tf.app.flags.DEFINE_float  ("learning_rate_decay", 0.9999, "Learning rate.")
 
 FLAGS = tf.app.flags.FLAGS
 

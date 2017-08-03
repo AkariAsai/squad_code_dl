@@ -20,6 +20,35 @@ from defs import LBLS
 logging.basicConfig(level=logging.INFO)
 
 
+def preprocess_sequence_data(self, dataset):
+    max_c = self.config.max_c
+    max_q = self.config.max_q
+
+    stop = next((idx for idx, xi in enumerate(dataset)
+                 if len(xi[0]) > max_c), len(dataset))
+    assert len(dataset[stop - 1][0]) <= max_c
+
+    c_ids = np.array([xi[0] + [0] * (max_c - len(xi[0]))
+                      for xi in dataset[:stop]], dtype=np.int32)
+    q_ids = np.array([xi[1] + [0] * (max_q - len(xi[1]))
+                      for xi in dataset[:stop]], dtype=np.int32)
+
+    span = np.array([xi[2] for xi in dataset[:stop]], dtype=np.int32)
+
+    c_len = np.array([len(xi[0]) for xi in dataset[:stop]], dtype=np.int32)
+    q_len = np.array([len(xi[1]) for xi in dataset[:stop]], dtype=np.int32)
+
+    data_size = c_ids.shape[0]
+
+    assert q_ids.shape[0] == data_size
+    assert c_ids.shape == (data_size, max_c)
+    assert q_len.shape == (data_size,)
+    assert c_len.shape == (data_size,)
+    assert span.shape == (data_size, 2)
+
+    return [c_ids, c_len, q_ids, q_len, span]
+
+
 def get_optimizer(opt):
     if opt == "adam":
         optfn = tf.train.AdamOptimizer
@@ -32,17 +61,18 @@ def get_optimizer(opt):
 
 def linear(input_, output_size, scope=None):
     '''
+    This linear func is for LSTM with attention because original method to calculate linear map is no longer exists in tf v1.0.
     Linear map: output[k] = sum_i(Matrix[k, i] * args[i] ) + Bias[k]
     Args:
         args: a tensor or a list of 2D, batch x n, Tensors.
     output_size: int, second dimension of W[i].
     scope: VariableScope for the created subgraph; defaults to "Linear".
-  Returns:
-    A 2D Tensor with shape [batch x output_size] equal to
-    sum_i(args[i] * W[i]), where W[i]s are newly created matrices.
-  Raises:
-    ValueError: if some of the arguments has unspecified or wrong shape.
-  '''
+      Returns:
+        A 2D Tensor with shape [batch x output_size] equal to
+        sum_i(args[i] * W[i]), where W[i]s are newly created matrices.
+      Raises:
+        ValueError: if some of the arguments has unspecified or wrong shape.
+    '''
 
     shape = input_.get_shape().as_list()
     if len(shape) != 2:
@@ -52,7 +82,6 @@ def linear(input_, output_size, scope=None):
             "Linear expects shape[1] of arguments: %s" % str(shape))
     input_size = shape[1]
 
-    # Now the computation.
     with tf.variable_scope(scope or "SimpleLinear"):
         matrix = tf.get_variable(
             "Matrix", [output_size, input_size], dtype=input_.dtype)
@@ -115,12 +144,13 @@ class Encoder(object):
                  It can be context-level representation, word-level representation,
                  or both.
         """
-        print("Encode start")
-        print("This is questions input")
-        print(inputs)
+        # print("Encode start")
+        # print("This is questions input")
+        # print(inputs)
         if encoder_state_input == None:
             encoder_state_input = tf.zeros([1, self.size])
 
+        # Run bidirectional lstm to encode question.
         cell_size = self.size
         inputs_shape = tf.shape(inputs)
         batch_size = inputs_shape[0]
@@ -132,7 +162,7 @@ class Encoder(object):
                 cell_fw,
                 cell_bw,
                 dtype=tf.float32,
-                sequence_length=self.length(masks),
+                # sequence_length=self.length(masks),
                 inputs=inputs,
                 time_major=False
             )
@@ -149,10 +179,6 @@ class Encoder(object):
         """
         Run a BiLSTM over the context paragraph conditioned on the question representation.
         """
-        print("This is paragraph encoder.The first one is onputs, second is prev_state/")
-        print(prev_states)
-        print()
-        print(prev_states)
 
         cell_size = self.size
         prev_states_fw, prev_states_bw = tf.split(prev_states, 2, 2)
@@ -164,7 +190,7 @@ class Encoder(object):
                 attn_cell_fw,
                 attn_cell_bw,
                 dtype=tf.float32,
-                sequence_length=self.length(masks),
+                # sequence_length=self.length(masks),
                 inputs=inputs,
                 time_major=False
             )
@@ -368,59 +394,77 @@ class QASystem(object):
 
         # ==== assemble pieces ====
         with tf.variable_scope("qa", initializer=tf.uniform_unit_scaling_initializer(1.0)):
-            print("setting up embeddings....")
             self.setup_embeddings()
-            print("setting up systems...")
             self.setup_system()
-            print("decoding")
-            self.preds = self.decoder.decode(
-                self.knowledge_rep, self.p_max_length)
-            print("predds")
-            print(self.preds)
-            self.loss = self.setup_loss(self.preds)
+            self.start_index_loss, self.end_index_loss = self.setup_loss()
             # self.train_op_start = tf.train.AdamOptimizer()
             # self.train_op_end = tf.train.AdamOptimizer()
 
         # ==== set up training/updating procedure ====
+        step = tf.Variable(0, trainable=False)
+        rate = tf.train.exponential_decay(
+            self.config.learning_rate, step, 1, self.config.learning_rate_decay)
+
+        optimizer = get_optimizer(self.config.optimizer)(rate)
+
+        s_grads, s_vars = zip(
+            *optimizer.compute_gradients(self.start_index_loss))
+        e_grads, e_vars = zip(
+            *optimizer.compute_gradients(self.end_index_loss))
+
+        if self.config.max_gradient_norm:
+            c_s_grads, self.s_grad_norm = tf.clip_by_global_norm(
+                s_grads, self.config.max_gradient_norm)
+            c_e_grads, self.e_grad_norm = tf.clip_by_global_norm(
+                e_grads, self.config.max_gradient_norm)
+        else:
+            c_s_grads = s_grads
+            c_e_grads = e_grads
+            self.s_grad_norm = tf.global_norm(s_grads)
+            self.e_grad_norm = tf.global_norm(e_grads)
+
+        self.start_index_train_op = optimizer.apply_gradients(
+            zip(c_s_grads, s_vars))
+        self.end_index_train_op = optimizer.apply_gradients(
+            zip(c_e_grads, e_vars))
 
     def setup_system(self):
         """
-        After your modularized implementation of encoder and decoder
-        you should call various functions inside encoder, decoder here
-        to assemble your reading comprehension system!
-        :return:
+        Encode questions by using basic LSTM, also encodes paragraph using LSTM with attentions.
+        After finishing encoding, it decodes the result using MatchLSTM, and setting preds, with matchLSTM results.
         """
         encoded_q, self.q_states = self.encoder.encode_questions(
             self.q_embeddings, self.q_mask_placeholder, None)
         encoded_p, self.p_states = self.encoder.encode_w_attn(
             self.p_embeddings, self.p_mask_placeholder, self.q_states, scope="", reuse=False)
-
-        print("This is setup system")
-        print(self.q_states.shape)
-        print(self.p_states.shape)
-
-        print("len of q : {0}, len of p : {1}".format(
-            self.q_max_length, self.p_max_length))
         self.knowledge_rep = self.decoder.match_LASTM(
             self.q_states, self.p_states, self.q_max_length, self.p_max_length)
+        self.preds = self.decoder.decode(
+            self.knowledge_rep, self.p_max_length)
 
-    def setup_loss(self, preds):
+    def setup_loss(self):
         """
-        Set up your loss computation here
-        :return:
+        sets up losses based on decoder.decode inputs, refered as self.preds.
+        preds[0] -> start index predictons, preds[1] -> end index predictions.
+        returns losses for both of start_index and end_index.
+        return start_index_loss, end_index_loss
         """
-        preds = np.array(preds)
-        print("setting up loss.")
+        preds = np.array(self.preds)
+
         with vs.variable_scope("start_index_loss"):
             loss_tensor = tf.boolean_mask(tf.nn.sparse_softmax_cross_entropy_with_logits(
                 logits=preds[0], labels=self.start_labels_placeholder), self.p_mask_placeholder)
             start_index_loss = tf.reduce_mean(loss_tensor, 0)
+            tf.summary.scalar(
+                'start_index_cross_entroy_loss', start_index_loss)
+
         with vs.variable_scope("end_index_loss"):
             loss_tensor = tf.boolean_mask(tf.nn.sparse_softmax_cross_entropy_with_logits(
                 logits=preds[1], labels=self.end_labels_placeholder), self.p_mask_placeholder)
             end_index_loss = tf.reduce_mean(loss_tensor, 0)
+            tf.summary.scalar('end_index_cross_entroy_loss', end_index_loss)
 
-        return [start_index_loss, end_index_loss]
+        return start_index_loss, end_index_loss
 
     def setup_embeddings(self):
         """
@@ -439,34 +483,19 @@ class QASystem(object):
             self.p_embeddings = tf.reshape(
                 p_embeddings, shape=[-1, self.config.paragraph_size, 1 * self.embed_size])
 
-    def optimizer(self, session, dataset, mask, dropout=1):
+    def optimize(self, session, question_batch, context_batch, labels_batch=None):
         """
         Takes in actual data to optimize your model
         This method is equivalent to a step() function
         :return:
         """
-        input_feed = {}
-        if train_x is not None:
-            input_feed[self.q_placeholder] = dataset['Questions']
-            input_feed[self.p_placeholder] = dataset['Paragraphs']
-        if train_y is not None:
-            input_feed[self.start_labels_placeholder] = dataset['Labels'][:, 0]
-            input_feed[self.end_labels_placeholder] = dataset['Labels'][:, 1]
-        if mask is not None:
-            input_feed[self.q_mask_placeholder] = dataset['Questions_masks']
-            input_feed[self.p_mask_placeholder] = dataset['Paragraphs_masks']
-        input_feed[self.dropout_placeholder] = dropout
+        input_feed = self.create_feed_dict(
+            question_batch, context_batch, labels_batch)
 
-        output_feed = []
-        train_op_start = tf.train.AdamOptimizer(
-            self.config.learning_rate).minimize(self.start_index_loss)
-        output_feed = [train_op_start, self.start_index_loss]
-        start_index_pred = session.run(output_feed, input_feed)
-
-        train_op_end = tf.train.AdamOptimizer(
-            self.config.learning_rate).minimize(self.end_index_loss)
-        output_feed = [train_op_end, self.end_index_loss]
-        end_index_pred = session.run(output_feed, input_feed)
+        start_output_feed = [self.start_index_train_op, self.start_index_loss]
+        _, start_index_loss = session.run(start_output_feed, input_feed)
+        end_output_feed = [self.end_index_train_op, self.end_index_loss]
+        _, end_index_loss = session.run(end_output_feed, input_feed)
 
         return start_index_loss, end_index_loss
 
@@ -486,6 +515,7 @@ class QASystem(object):
         :return:
         """
         input_feed = {}
+
         if train_x is not None:
             input_feed[self.q_placeholder] = train_x['Questions']
             input_feed[self.p_placeholder] = train_x['Paragraphs']
@@ -503,39 +533,32 @@ class QASystem(object):
         NOTE: You do not have to do anything here.
         """
         feed_dict = {}
-        print("self.placeholder: {0}".format(self.p_placeholder))
-        print("self.qlaceholder: {0}".format(self.q_placeholder))
-        print("num of question, len of question, : {0}, {1}".format(len(question_batch), len(question_batch[0])))
-        print("num of paragraph, len of paragraph, : {0}, {1}".format(len(context_batch), len(context_batch[0])))
-        #print("question_batch: {0}".format(question_batch))
+        print("qeustion batch")
+        print(question_batch)
+
         feed_dict[self.q_placeholder] = question_batch
+        print(feed_dict[self.q_placeholder])
         feed_dict[self.p_placeholder] = context_batch
+
         if labels_batch is not None:
-            feed_dict[self.start_labels_placeholder] = labels_batch[0]
-            feed_dict[self.end_labels_placeholder] = labels_batch[1]
+            start_index = [labels[0] for labels in labels_batch]
+            end_index = [labels[1] for labels in labels_batch]
+            start_labels = []
+            end_labels = []
+            for i in range(len(labels_batch)):
+                start_label_question = [
+                    1 if j == start_index[i] else 0 for j in range(self.p_max_length)]
+                end_label_question = [1 if j == end_index[i]
+                                      else 0 for j in range(self.p_max_length)]
+                start_labels.append(start_label_question)
+                end_labels.append(end_label_question)
+
+        feed_dict[self.start_labels_placeholder] = start_labels
+        feed_dict[self.end_labels_placeholder] = end_labels
+
         return feed_dict
 
-    def train_on_batch(self, session, question_batch, context_batch, label_batch):
-        input_feed = self.create_feed_dict(
-            question_batch, context_batch, label_batch)
-        #input_feed[self.dropout_placeholder] = dropout
-
-        if self.loss is None:
-            self.loss = [0, 0]
-
-        train_op_start = tf.train.AdamOptimizer(
-            self.config.learning_rate).minimize(self.loss[0])
-        output_feed = [train_op_start, self.loss[0]]
-        start_index_pred = session.run(output_feed, input_feed)
-
-        train_op_end = tf.train.AdamOptimizer(
-            self.config.learning_rate).minimize(self.loss[1])
-        output_feed = [train_op_end, self.loss[1]]
-        end_index_pred = session.run(output_feed, input_feed)
-
-        return self.loss[0]
-
-    def run_epoch(self, sess, inputs):
+    def run_epoch(self, session, inputs):
         """Runs an epoch of training.
         Args:
             sess: tf.Session() object
@@ -544,12 +567,21 @@ class QASystem(object):
         Returns:
             average_loss: scalar. Average minibatch loss of model on epoch.
         """
+        losses = []
         n_minibatches, total_loss = 0, 0
+
         for [question_batch, context_batch, labels_batch] in get_minibatches([inputs['Questions'], inputs['Paragraphs'], inputs['Labels']], self.config.batch_size):
+            self.start_index_loss, self.end_index_loss = self.optimize(
+                session, question_batch, context_batch, labels_batch)
             n_minibatches += 1
-            total_loss += self.train_on_batch(sess,
-                                              question_batch, context_batch, labels_batch)
-        return total_loss / n_minibatches
+
+            losses.append([self.start_index_loss, self.start_index_loss])
+
+        mean = np.mean(losses, axis=0)
+        logging.info(
+            "Logged mean epoch losses: train : %f dev : %f ", mean[0], mean[1])
+
+        return losses
 
     def answer(self, session, test_x, mask):
 
@@ -637,7 +669,6 @@ class QASystem(object):
         :param train_dir: path to the directory where you should save the model checkpoint
         :return:
         """
-
         results_path = os.path.join(
             train_dir, "{:%Y%m%d_%H%M%S}".format(datetime.now()))
         tic = time.time()
@@ -647,9 +678,9 @@ class QASystem(object):
         toc = time.time()
         logging.info("Number of params: %d (retreival took %f secs)" %
                      (num_params, toc - tic))
-        train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train', session.graph)
         best_score = 0.
-        losses = []
+        print("Questions_masks")
+        print(dataset["Questions_masks"])
         for epoch in range(self.config.epochs):
             logging.info("Epoch %d out of %d", epoch + 1, self.config.epochs)
             logging.info("Best score so far: " + str(best_score))
