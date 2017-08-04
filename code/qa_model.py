@@ -204,7 +204,7 @@ class Decoder(object):
     def __init__(self, output_size):
         self.output_size = 2 * output_size
 
-    def match_LASTM(self, questions_states, paragraph_states, question_length, paragraph_length):
+    def match_LSTM(self, questions_states, paragraph_states, question_length, paragraph_length):
         '''
         This is matchLSTM for decode.
         '''
@@ -444,7 +444,7 @@ class QASystem(object):
             self.q_embeddings, self.q_mask_placeholder, None)
         encoded_p, self.p_states = self.encoder.encode_w_attn(
             self.p_embeddings, self.p_mask_placeholder, self.q_states, scope="", reuse=False)
-        self.knowledge_rep = self.decoder.match_LASTM(
+        self.knowledge_rep = self.decoder.match_LSTM(
             self.q_states, self.p_states, self.q_max_length, self.p_max_length)
         self.preds = self.decoder.decode(
             self.knowledge_rep, self.p_max_length)
