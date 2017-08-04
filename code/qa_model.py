@@ -144,9 +144,7 @@ class Encoder(object):
                  It can be context-level representation, word-level representation,
                  or both.
         """
-        # print("Encode start")
-        # print("This is questions input")
-        # print(inputs)
+
         if encoder_state_input == None:
             encoder_state_input = tf.zeros([1, self.size])
 
@@ -162,7 +160,7 @@ class Encoder(object):
                 cell_fw,
                 cell_bw,
                 dtype=tf.float32,
-                # sequence_length=self.length(masks),
+                sequence_length=self.length(masks),
                 inputs=inputs,
                 time_major=False
             )
@@ -171,8 +169,6 @@ class Encoder(object):
         final_state_bw = final_state[1].h
         final_state = tf.concat([final_state_fw, final_state_bw], 1)
         states = tf.concat(outputs, 2)
-        print("This is the output.")
-        print(final_state)
         return final_state, states
 
     def encode_w_attn(self, inputs, masks, prev_states, scope="", reuse=False):
@@ -190,7 +186,7 @@ class Encoder(object):
                 attn_cell_fw,
                 attn_cell_bw,
                 dtype=tf.float32,
-                # sequence_length=self.length(masks),
+                sequence_length=self.length(masks),
                 inputs=inputs,
                 time_major=False
             )
@@ -228,7 +224,8 @@ class Decoder(object):
                                 initializer=tf.contrib.layers.xavier_initializer())
             b = tf.get_variable("b", shape=(
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
-            state = tf.zeros([1, self.output_size])
+            state = tf.zeros([1,  self.output_size])
+            print("output size is {0}".format(self.output_size))
 
             for time_step in range(paragraph_length):
                 p_state = paragraph_states[:, time_step, :]
@@ -242,15 +239,22 @@ class Decoder(object):
                 p_z = tf.matmul(atten, X_)
                 p_z = tf.reshape(p_z, [-1, self.output_size])
                 z = tf.concat([p_state, p_z], 1)
+                # print("Input size is {0}".format(z.get_shape()))
+                # print("Start size is {0}".format(state.get_shape()))
+                # should be o, state but the size seems different.
                 state, o = cell(z, state)
+                # print(o.get_shape())
+                # print(state.get_shape())
                 fw_states.append(state)
                 tf.get_variable_scope().reuse_variables()
 
         fw_states = tf.stack(fw_states)
         fw_states = tf.transpose(fw_states, perm=(1, 0, 2))
+
         cell = tf.contrib.rnn.LSTMCell(
             num_units=self.output_size, state_is_tuple=False)
         bk_states = []
+        print("Forward decoding done.")
 
         with tf.variable_scope("Backward_Match-LSTM"):
             W_q = tf.get_variable("W_q", shape=(
@@ -278,8 +282,11 @@ class Decoder(object):
                 p_z = tf.reshape(p_z, [-1, self.output_size])
                 z = tf.concat([p_state, p_z], 1)
                 state, o = cell(z, state)
+                # print(o.get_shape())
+                # print(state.get_shape())
                 bk_states.append(state)
                 tf.get_variable_scope().reuse_variables()
+        print("backward decoding done.")
 
         bk_states = tf.stack(bk_states)
         bk_states = tf.transpose(bk_states, perm=(1, 0, 2))
@@ -483,14 +490,14 @@ class QASystem(object):
             self.p_embeddings = tf.reshape(
                 p_embeddings, shape=[-1, self.config.paragraph_size, 1 * self.embed_size])
 
-    def optimize(self, session, question_batch, context_batch, labels_batch=None):
+    def optimize(self, session, question_batch, context_batch, labels_batch=None, q_mask_batch=None, p_mask_batch=None):
         """
         Takes in actual data to optimize your model
         This method is equivalent to a step() function
         :return:
         """
         input_feed = self.create_feed_dict(
-            question_batch, context_batch, labels_batch)
+            question_batch, context_batch, labels_batch, q_mask_batch, p_mask_batch)
 
         start_output_feed = [self.start_index_train_op, self.start_index_loss]
         _, start_index_loss = session.run(start_output_feed, input_feed)
@@ -528,17 +535,16 @@ class QASystem(object):
 
         return outputs
 
-    def create_feed_dict(self, question_batch, context_batch, labels_batch=None):
+    def create_feed_dict(self, question_batch, context_batch, labels_batch=None, q_mask_batch=None, p_mask_batch=None):
         """Creates the feed_dict for the model.
         NOTE: You do not have to do anything here.
         """
         feed_dict = {}
-        print("qeustion batch")
-        print(question_batch)
 
         feed_dict[self.q_placeholder] = question_batch
-        print(feed_dict[self.q_placeholder])
         feed_dict[self.p_placeholder] = context_batch
+        feed_dict[self.q_mask_placeholder] = q_mask_batch
+        feed_dict[self.p_mask_placeholder] = p_mask_batch
 
         if labels_batch is not None:
             start_index = [labels[0] for labels in labels_batch]
@@ -570,9 +576,10 @@ class QASystem(object):
         losses = []
         n_minibatches, total_loss = 0, 0
 
-        for [question_batch, context_batch, labels_batch] in get_minibatches([inputs['Questions'], inputs['Paragraphs'], inputs['Labels']], self.config.batch_size):
+        for [question_batch, context_batch, labels_batch, q_mask_batch, p_mask_batch] in \
+                get_minibatches([inputs['Questions'], inputs['Paragraphs'], inputs['Labels'], inputs['Questions_masks'], inputs['Paragraphs_masks']], self.config.batch_size):
             self.start_index_loss, self.end_index_loss = self.optimize(
-                session, question_batch, context_batch, labels_batch)
+                session, question_batch, context_batch, labels_batch, q_mask_batch, p_mask_batch)
             n_minibatches += 1
 
             losses.append([self.start_index_loss, self.start_index_loss])
