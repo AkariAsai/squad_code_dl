@@ -210,7 +210,7 @@ class Decoder(object):
         '''
 
         cell = tf.contrib.rnn.LSTMCell(
-            num_units=self.output_size, state_is_tuple=False)
+            num_units=self.output_size // 2, state_is_tuple=False)
         fw_states = []
 
         with tf.variable_scope("Forward_Match-LSTM"):
@@ -239,12 +239,9 @@ class Decoder(object):
                 p_z = tf.matmul(atten, X_)
                 p_z = tf.reshape(p_z, [-1, self.output_size])
                 z = tf.concat([p_state, p_z], 1)
-                # print("Input size is {0}".format(z.get_shape()))
-                # print("Start size is {0}".format(state.get_shape()))
-                # should be o, state but the size seems different.
-                state, o = cell(z, state)
-                # print(o.get_shape())
-                # print(state.get_shape())
+
+                o, state = cell(z, state)
+
                 fw_states.append(state)
                 tf.get_variable_scope().reuse_variables()
 
@@ -252,7 +249,7 @@ class Decoder(object):
         fw_states = tf.transpose(fw_states, perm=(1, 0, 2))
 
         cell = tf.contrib.rnn.LSTMCell(
-            num_units=self.output_size, state_is_tuple=False)
+            num_units=self.output_size // 2, state_is_tuple=False)
         bk_states = []
         print("Forward decoding done.")
 
@@ -268,12 +265,20 @@ class Decoder(object):
             b = tf.get_variable("b", shape=(
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
             state = tf.zeros([1, self.output_size])
+            print("The shape of W_q {0}".format(W_q))
+            print("The shape of W_r {0}".format(W_r))
+            print("The shape of b_p {0}".format(b_p))
+            print("The shape of W {0}".format(w))
+            print("The shape of b {0}".format(b))
 
             for time_step in range(paragraph_length):
                 p_state = paragraph_states[:, time_step, :]
                 X_ = tf.reshape(questions_states, [-1, self.output_size])
                 G = tf.nn.tanh(tf.matmul(X_, W_q) + tf.matmul(p_state,
                                                               W_r) + tf.matmul(state, W_r) + b_p)  # batch_size*Q,l
+
+                print("C timestep {0} : {1}".format(time_step, G))
+
                 atten = tf.nn.softmax(tf.matmul(G, w) + b)
                 atten = tf.reshape(atten, [-1, 1, question_length])
                 X_ = tf.reshape(questions_states,
@@ -281,9 +286,8 @@ class Decoder(object):
                 p_z = tf.matmul(atten, X_)
                 p_z = tf.reshape(p_z, [-1, self.output_size])
                 z = tf.concat([p_state, p_z], 1)
-                state, o = cell(z, state)
-                # print(o.get_shape())
-                # print(state.get_shape())
+                o, state = cell(z, state)
+
                 bk_states.append(state)
                 tf.get_variable_scope().reuse_variables()
         print("backward decoding done.")
@@ -308,7 +312,7 @@ class Decoder(object):
         output_size = self.output_size
 
         cell = tf.contrib.rnn.LSTMCell(
-            num_units=output_size, state_is_tuple=False)
+            num_units=output_size // 2, state_is_tuple=False)
         beta_s = []
         with tf.variable_scope("Boundary-LSTM_start"):
             V = tf.get_variable("V", shape=(
@@ -331,7 +335,7 @@ class Decoder(object):
                     tf.matmul(F_s, v) + c), shape=[-1, paragraph_length])
                 beta_s.append(probab_s)
                 z = tf.matmul(probab_s, H_r)
-                state, _ = cell(z, state, scope="Boundary-LSTM_start")
+                _, state = cell(z, state, scope="Boundary-LSTM_start")
                 tf.get_variable_scope().reuse_variables()
         beta_s = tf.stack(beta_s)
         beta_s = tf.transpose(beta_s, perm=(1, 0, 2))
@@ -341,7 +345,7 @@ class Decoder(object):
         beta_e = []
         with tf.variable_scope("Boundary-LSTM_end"):
             cell = tf.contrib.rnn.LSTMCell(
-                num_units=output_size, state_is_tuple=False)
+                num_units=output_size // 2, state_is_tuple=False)
             V = tf.get_variable("V", shape=(
                 2 * output_size, output_size), initializer=tf.contrib.layers.xavier_initializer())
             b_a = tf.get_variable("b_a", shape=(
@@ -362,7 +366,7 @@ class Decoder(object):
                 beta_e.append(probab_e)
 
                 z = tf.matmul(probab_e, H_r)
-                state, _ = cell(z, state, scope="Boundary-LSTM_start")
+                _, state = cell(z, state, scope="Boundary-LSTM_start")
                 tf.get_variable_scope().reuse_variables()
         beta_e = tf.stack(beta_e)
         beta_e = tf.transpose(beta_e, perm=(1, 0, 2))
