@@ -46,6 +46,7 @@ tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat",
                            "Path to vocab file (default: ./data/squad/vocab.dat)")
 tf.app.flags.DEFINE_string(
     "embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
+tf.app.flags.DEFINE_float  ("learning_rate_decay", 0.9999, "Learning rate.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -97,32 +98,44 @@ def get_normalized_train_dir(train_dir):
 
 def initialize_datasets(data_dir, dataset='train', debugMode=False):
     # Open files
+    print("____________________________initializing dataset____________________________________")
     questions = open(data_dir + '/' + dataset + '.ids.question', 'rt')
     paragraphs = open(data_dir + '/' + dataset + '.ids.context', 'rt')
     labels = open(data_dir + '/' + dataset + '.span', 'rt')
-
+    print("____________________________open dataset____________________________________")
     output = {}
     output['Questions'] = []
     output['Paragraphs'] = []
     output['Labels'] = []
+
+    # # index  = 0
+    # print([[int(wordId) for wordId in q.split()] for q in questions])
+    # print([[int(wordId) for wordId in p.split()] for p in questions])
+
     for q in questions:
-        q = [int(wordId) for wordId in q.split()]
+        output['Questions'].append([int(wordId) for wordId in q.split()])
+    print("____________________________q done dataset____________________________________")
+
     for p in paragraphs:
-        p = [int(wordId) for wordId in p.split()]
+        output['Paragraphs'].append([int(wordId) for wordId in p.split()])
+
+    print("____________________________p done dataset____________________________________")
+
     for l in labels:
         l = [int(labelIdx) for labelIdx in l.split()]
-
-        output['Questions'].append(q)
-        output['Paragraphs'].append(p)
         output['Labels'].append(l)
-        if debugMode and len(output['Questions']) > 500:
-            break
+
+    print("____________________________l done dataset____________________________________")
+
+    print("Len of question: (should be 81398 ==) {0}" .format(len(output['Questions'])))
+    print(len(output['Paragraphs']))
+    print(len(output['Labels']))
     # Close files
     questions.close()
     paragraphs.close()
     labels.close()
     padded_dataset = pad_sequences(
-        output, FLAGS.output_size, FLAGS.question_size)
+        output, FLAGS.paragraph_size, FLAGS.question_size)
     return padded_dataset
 
 
