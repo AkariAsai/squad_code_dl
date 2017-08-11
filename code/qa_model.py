@@ -220,6 +220,8 @@ class Decoder(object):
         with tf.variable_scope("Forward_Match-LSTM"):
             W_q = tf.get_variable("W_q", shape=(
                 self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
+            W_p = tf.get_variable("W_p", shape=(
+                self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
             W_r = tf.get_variable("W_r", shape=(
                 self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
             b_p = tf.get_variable("b_p", shape=(
@@ -229,33 +231,36 @@ class Decoder(object):
             b = tf.get_variable("b", shape=(
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
             state = tf.zeros([1,  self.output_size])
-            print("output size is {0}".format(self.output_size))
-            print("The shape of W_q {0}".format(W_q.get_shape()))
-            print("The shape of W_r {0}".format(W_r.get_shape()))
-            print("The shape of b_p {0}".format(b_p.get_shape()))
-            print("The shape of W {0}".format(w.get_shape()))
-            print("The shape of b {0}".format(b.get_shape()))
 
             for time_step in range(paragraph_length):
                 p_state = paragraph_states[:, time_step, :]
                 X_ = tf.reshape(questions_states, [-1, self.output_size])
-                print("The shape of p_state {0}".format(state.get_shape()))
-                print("The shape of state {0}".format(p_state.get_shape()))
-                print("The shape of X {0}".format(X_.get_shape()))
-                matmul_0 = tf.matmul(X_, W_q)
-                matmul_1 = tf.matmul(p_state, W_r)
-                matmul_2 = tf.matmul(state, W_r)
-                sum_0 = matmul_0 + matmul_1
-                sum_1 = sum_0 + matmul_2
-                sum_2 = sum_1 + b_p
-                print("The shape of sum_0 {0}".format(sum_0.get_shape()))
-                print("The shape of sum_1 {0}".format(sum_1.get_shape()))
-                print("The shape of sum_2 {0}".format(sum_2.get_shape()))
+
+                X_shape = X_.get_shape()
+                e_q_t = tf.ones([1, X_shape.as_list()[0]])
+
+                # An intermediate value, converted linearly of question's
+                # hidden states.
+                q_intm = tf.matmul(X_, W_q)
+                # intermediate valuen, W_pH_p + W_th_{i-1} + b_q, the shape
+                # should be (length_of hidden state l,1)
+                p_intm = tf.matmul(p_state, W_p) + tf.matmul(state, W_r) + b_p
+                print("The shape of sum_0 {0}".format(p_intm.get_shape()))
+
+                # expand (l, 1) vector to (l, q), by repeating p_intm to left
+                # column. Implemented by outer product of p_intm and  [1 1 1
+                # ... 1](length = q)
+                p_intm_converted = tf.matmul(p_intm, e_q_t)
+                print("The shape of sum_1 {0}".format(
+                    p_intm_converted.get_shape()))
+
+                sum_p_q = q_intm + p_intm_converted
+                print("The shape of sum_2 {0}".format(sum_p_q.get_shape()))
 
                 # G = tf.nn.tanh(tf.matmul(X_, W_q) + tf.matmul(p_state,
                 # W_r) + tf.matmul(state, W_r) + b_p)  # batch_size*Q,l
 
-                G = tf.nn.tanh(sum_2)
+                G = tf.nn.tanh(sum_p_q)
                 atten = tf.nn.softmax(tf.matmul(G, w) + b)
                 atten = tf.reshape(atten, [-1, 1, question_length])
                 X_ = tf.reshape(questions_states,
@@ -280,6 +285,8 @@ class Decoder(object):
         with tf.variable_scope("Backward_Match-LSTM"):
             W_q = tf.get_variable("W_q", shape=(
                 self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
+            W_p = tf.get_variable("W_p", shape=(
+                self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
             W_r = tf.get_variable("W_r", shape=(
                 self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
             b_p = tf.get_variable("b_p", shape=(
@@ -290,32 +297,35 @@ class Decoder(object):
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
             state = tf.zeros([1, self.output_size])
 
-            print("output size is {0}".format(self.output_size))
-            print("The shape of W_q {0}".format(W_q.get_shape()))
-            print("The shape of W_r {0}".format(W_r.get_shape()))
-            print("The shape of b_p {0}".format(b_p.get_shape()))
-            print("The shape of W {0}".format(w.get_shape()))
-            print("The shape of b {0}".format(b.get_shape()))
-
             for time_step in range(paragraph_length):
                 p_state = paragraph_states[:, time_step, :]
                 X_ = tf.reshape(questions_states, [-1, self.output_size])
-                print("The shape of p_state {0}".format(state.get_shape()))
-                print("The shape of state {0}".format(p_state.get_shape()))
-                print("The shape of X {0}".format(X_))
-                matmul_0 = tf.matmul(X_, W_q)
-                matmul_1 = tf.matmul(p_state, W_r)
-                matmul_2 = tf.matmul(state, W_r)
-                sum_0 = matmul_0 + matmul_1
-                sum_1 = sum_0 + matmul_2
-                sum_2 = sum_1 + b_p
-                print("The shape of sum_0 {0}".format(sum_0.get_shape()))
-                print("The shape of sum_1 {0}".format(sum_1.get_shape()))
-                print("The shape of sum_2 {0}".format(sum_2.get_shape()))
+
+                X_shape = X_.get_shape()
+                e_q_t = tf.ones([1, X_shape.as_list()[0]])
+
+                # An intermediate value, converted linearly of question's
+                # hidden states.
+                q_intm = tf.matmul(X_, W_q)
+                # intermediate valuen, W_pH_p + W_th_{i-1} + b_q, the shape
+                # should be (length_of hidden state l,1)
+                p_intm = tf.matmul(p_state, W_p) + tf.matmul(state, W_r) + b_p
+                print("The shape of sum_0 {0}".format(p_intm.get_shape()))
+
+                # expand (l, 1) vector to (l, q), by repeating p_intm to left
+                # column. Implemented by outer product of p_intm and  [1 1 1
+                # ... 1](length = q)
+                p_intm_converted = tf.matmul(p_intm, e_q_t)
+                print("The shape of sum_1 {0}".format(
+                    p_intm_converted.get_shape()))
+
+                sum_p_q = q_intm + p_intm_converted
+                print("The shape of sum_2 {0}".format(sum_p_q.get_shape()))
 
                 # G = tf.nn.tanh(tf.matmul(X_, W_q) + tf.matmul(p_state,
                 # W_r) + tf.matmul(state, W_r) + b_p)  # batch_size*Q,l
-                G = tf.nn.tanh(sum_2)
+
+                G = tf.nn.tanh(sum_p_q)
 
                 atten = tf.nn.softmax(tf.matmul(G, w) + b)
                 atten = tf.reshape(atten, [-1, 1, question_length])
