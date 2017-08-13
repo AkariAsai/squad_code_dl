@@ -242,7 +242,8 @@ class Decoder(object):
                 p_intm = tf.matmul(p_state, W_p) + tf.matmul(state, W_r) + b_p
 
                 # The e_q is a column vector filled with 1, whose length=Q
-                # e_q_T is transposed matrix of wq, whose shape is (b_size, Q)
+                # e_q_t is transposed matrix of e_q.
+                # The sape is (Q, batch_size)
                 e_q_t = tf.ones([tf.shape(X_)[0], tf.shape(p_state)[0]])
 
                 # Produces matrix by repeating vector/matrix p_intm Q times.
