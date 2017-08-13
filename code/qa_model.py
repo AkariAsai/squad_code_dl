@@ -202,20 +202,15 @@ class Encoder(object):
 
 class Decoder(object):
     def __init__(self, output_size):
-        self.output_size = 2 * output_size
+        self.output_size = output_size * 2
 
     def match_LSTM(self, questions_states, paragraph_states, question_length, paragraph_length):
         '''
         This is matchLSTM for decode.
         '''
-
         cell = tf.contrib.rnn.LSTMCell(
             num_units=self.output_size // 2, state_is_tuple=False)
         fw_states = []
-
-        print("The paragraph_states {0}".format(paragraph_states))
-        print("The shape of paragraph_states {0}".format(
-            paragraph_states.get_shape()))
 
         with tf.variable_scope("Forward_Match-LSTM"):
             W_q = tf.get_variable("W_q", shape=(
@@ -234,43 +229,45 @@ class Decoder(object):
 
             for time_step in range(paragraph_length):
                 p_state = paragraph_states[:, time_step, :]
+
+                # Reshapes to 2-D, (batch_size * q_length) * output_shape(=l)
                 X_ = tf.reshape(questions_states, [-1, self.output_size])
 
-                # the dimention of e_Q_t should be [X_shape_X, batch-size]
-                e_q_t = tf.ones([tf.shape(X_)[0], tf.shape(p_state)[0]])
-
-                # An intermediate value, converted linearly of question's
-                # hidden states.
+                # an Intermediate value of question states.
+                # The shape is (Q, l)
                 q_intm = tf.matmul(X_, W_q)
 
-                # intermediate valuen, W_pH_p + W_th_{i-1} + b_q, the shape
-                # should be (length_of hidden state l,1)
+                # W_pH_p + W_th_{i-1} + b_q
+                # The shape is (batch_size, output_size, 1), R^{l x 1}
                 p_intm = tf.matmul(p_state, W_p) + tf.matmul(state, W_r) + b_p
 
-                # expand (l, 1) vector to (l, q), by repeating p_intm to left
-                # column. Implemented by outer product of p_intm and  [1 1 1
-                # ... 1](length = q)
+                # The e_q is a column vector filled with 1, whose length=Q
+                # e_q_T is transposed matrix of wq, whose shape is (b_size, Q)
+                e_q_t = tf.ones([tf.shape(X_)[0], tf.shape(p_state)[0]])
+
+                # Produces matrix by repeating vector/matrix p_intm Q times.
                 p_intm_converted = tf.matmul(e_q_t, p_intm)
-                # p_intm_converted shape is (1000, 200), which is the same as
-                # q_intm, WqHq
+                # p_intm_converted shape is (1000, 200), same as q_intm
                 sum_p_q = q_intm + p_intm_converted
 
-                G = tf.nn.tanh(sum_p_q)
                 # G is the output value of activation function tanh.
+                G = tf.nn.tanh(sum_p_q)
 
-                atten = tf.nn.softmax(tf.matmul(G, w) + b)
                 # calculate attention weight, for the i th token.
                 # atten shape is now (1000, 1).
+                atten = tf.nn.softmax(tf.matmul(G, w) + b)
+
+                # Reshapes attention vector, shape is (b_size=10, 1, Q=100)
                 atten = tf.reshape(atten, [-1, 1, question_length])
-                # After being reshaped, the atten shape should be (10, 1, 100)
 
                 X_ = tf.reshape(questions_states,
                                 [-1, question_length, self.output_size])
                 # After being reshapes, the X_ is now (batch_size=10,
                 # question_length=100, output_size=200)
 
-                # TODO: Need to take transpose matrix.
+                # TODO: attensin weight must be transposed. p.4
                 p_z = tf.matmul(atten, X_)
+
                 p_z = tf.reshape(p_z, [-1, self.output_size])
                 z = tf.concat([p_state, p_z], 1)
 
@@ -283,9 +280,9 @@ class Decoder(object):
         fw_states = tf.transpose(fw_states, perm=(1, 0, 2))
 
         cell = tf.contrib.rnn.LSTMCell(
-            num_units=self.output_size // 2, state_is_tuple=False)
+            num_units=self.output_size * 2, state_is_tuple=False)
         bk_states = []
-        print("Forward decoding done.")
+        print("Forward MatchLSTM done.")
 
         with tf.variable_scope("Backward_Match-LSTM"):
             W_q = tf.get_variable("W_q", shape=(
@@ -330,7 +327,9 @@ class Decoder(object):
                 atten = tf.reshape(atten, [-1, 1, question_length])
                 X_ = tf.reshape(questions_states,
                                 [-1, question_length, self.output_size])
+
                 p_z = tf.matmul(atten, X_)
+
                 p_z = tf.reshape(p_z, [-1, self.output_size])
                 z = tf.concat([p_state, p_z], 1)
                 o, state = cell(z, state)
