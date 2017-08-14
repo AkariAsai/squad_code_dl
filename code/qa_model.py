@@ -220,12 +220,12 @@ class Decoder(object):
             W_r = tf.get_variable("W_r", shape=(
                 self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
             b_p = tf.get_variable("b_p", shape=(
-                10, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
+                1, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
             w = tf.get_variable("w", shape=(self.output_size, 1),
                                 initializer=tf.contrib.layers.xavier_initializer())
             b = tf.get_variable("b", shape=(
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
-            state = tf.zeros([1, self.output_size])
+            state = tf.zeros([10, self.output_size])
 
             for time_step in range(paragraph_length):
                 p_state = paragraph_states[:, time_step, :]
@@ -293,12 +293,12 @@ class Decoder(object):
             W_r = tf.get_variable("W_r", shape=(
                 self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
             b_p = tf.get_variable("b_p", shape=(
-                10, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
+                1, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
             w = tf.get_variable("w", shape=(self.output_size, 1),
                                 initializer=tf.contrib.layers.xavier_initializer())
             b = tf.get_variable("b", shape=(
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
-            state = tf.zeros([1, self.output_size])
+            state = tf.zeros([10, self.output_size])
 
             for time_step in range(paragraph_length):
                 p_state = paragraph_states[:, time_step, :]
