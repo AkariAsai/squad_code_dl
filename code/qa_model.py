@@ -435,11 +435,17 @@ class Decoder(object):
                 second = tf.matmul(e_p1_t, tf.matmul(state, W_a) + b_a)
                 F_s = tf.nn.tanh(first + second)
 
-                probab_e = tf.reshape(tf.nn.softmax(
-                    tf.matmul(F_e, v) + c), shape=[-1, paragraph_length])
+                beta = tf.nn.softmax(tf.matmul(F_s, v) + c)
+
+                probab_e = tf.reshape(beta, shape=[-1, paragraph_length])
                 beta_e.append(probab_e)
 
-                z = tf.matmul(probab_e, H_r)
+                beta = tf.reshape(beta, [-1, 1, paragraph_length])
+                H_r = tf.reshape(
+                    knowledge_rep, [-1, paragraph_length, 2 * output_size])
+                z = tf.matmul(beta, H_r)
+                z = tf.reshape(z, [-1, 2 * output_size])
+                print(z.get_shape())
                 _, state = cell(z, state, scope="Boundary-LSTM_start")
                 tf.get_variable_scope().reuse_variables()
         beta_e = tf.stack(beta_e)
