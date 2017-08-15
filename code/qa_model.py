@@ -239,6 +239,10 @@ class Decoder(object):
 
                 # W_pH_p + W_th_{i-1} + b_q
                 # The shape is (batch_size, output_size, 1), R^{l x 1}
+                # print(p_state.get_shape())
+                # print(W_p.get_shape())
+                # print(state.get_shape())
+                # print(W_r.get_shape())
                 p_intm = tf.matmul(p_state, W_p) + tf.matmul(state, W_r) + b_p
 
                 # The e_q is a column vector filled with 1, whose length=Q
@@ -281,7 +285,7 @@ class Decoder(object):
         fw_states = tf.transpose(fw_states, perm=(1, 0, 2))
 
         cell = tf.contrib.rnn.LSTMCell(
-            num_units=self.output_size * 2, state_is_tuple=False)
+            num_units=self.output_size // 2, state_is_tuple=False)
         bk_states = []
         print("Forward MatchLSTM done.")
 
@@ -343,6 +347,8 @@ class Decoder(object):
         bk_states = tf.transpose(bk_states, perm=(1, 0, 2))
         knowledge_rep = tf.concat([fw_states, bk_states], 2)
 
+        print("The shape of know_rep {0}".format(knowledge_rep.get_shape()))
+
         return knowledge_rep
 
     def decode(self, knowledge_rep, paragraph_length):
@@ -356,6 +362,7 @@ class Decoder(object):
                               decided by how you choose to implement the encoder
         :return:
         """
+        # TODO: Add zero vector at 0, also recalc
         output_size = self.output_size
 
         cell = tf.contrib.rnn.LSTMCell(
@@ -372,18 +379,32 @@ class Decoder(object):
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
             v = tf.get_variable("v", shape=(output_size, 1),
                                 initializer=tf.contrib.layers.xavier_initializer())
-            state = tf.zeros([1, output_size])
+            state = tf.zeros([10, output_size])
 
             for time_step in range(paragraph_length):
                 H_r = tf.reshape(knowledge_rep, [-1, 2 * output_size])
-                F_s = tf.nn.tanh(tf.matmul(H_r, V) +
-                                 tf.matmul(state, W_a) + b_a)
-                probab_s = tf.reshape(tf.nn.softmax(
-                    tf.matmul(F_s, v) + c), shape=[-1, paragraph_length])
+                first = tf.matmul(H_r, V)
+
+                e_p1_t = tf.ones(
+                    [tf.shape(H_r)[0], tf.shape(knowledge_rep)[0]])
+                second = tf.matmul(e_p1_t, tf.matmul(state, W_a) + b_a)
+                F_s = tf.nn.tanh(first + second)
+
+                beta = tf.nn.softmax(tf.matmul(F_s, v) + c)
+                probab_s = tf.reshape(beta, shape=[-1, paragraph_length])
                 beta_s.append(probab_s)
-                z = tf.matmul(probab_s, H_r)
+                # prob shape (10, 766)
+                beta = tf.reshape(beta, [-1, 1, paragraph_length])
+                H_r = tf.reshape(
+                    knowledge_rep, [-1, paragraph_length, 2 * output_size])
+
+                # beta has to be transposed.
+                z = tf.matmul(beta, H_r)
+                z = tf.reshape(z, [-1, 2 * output_size])
+                print(z.get_shape())
                 _, state = cell(z, state, scope="Boundary-LSTM_start")
                 tf.get_variable_scope().reuse_variables()
+
         beta_s = tf.stack(beta_s)
         beta_s = tf.transpose(beta_s, perm=(1, 0, 2))
 
@@ -403,11 +424,17 @@ class Decoder(object):
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
             v = tf.get_variable("v", shape=(output_size, 1),
                                 initializer=tf.contrib.layers.xavier_initializer())
-            state = tf.zeros([1, output_size])
+            # 10 is output size.
+            state = tf.zeros([10, output_size])
             for time_step in range(paragraph_length):
                 H_r = tf.reshape(knowledge_rep, [-1, 2 * output_size])
-                F_e = tf.nn.tanh(tf.matmul(H_r, V) +
-                                 tf.matmul(state, W_a) + b_a)
+                first = tf.matmul(H_r, V)
+
+                e_p1_t = tf.ones(
+                    [tf.shape(H_r)[0], tf.shape(knowledge_rep)[0]])
+                second = tf.matmul(e_p1_t, tf.matmul(state, W_a) + b_a)
+                F_s = tf.nn.tanh(first + second)
+
                 probab_e = tf.reshape(tf.nn.softmax(
                     tf.matmul(F_e, v) + c), shape=[-1, paragraph_length])
                 beta_e.append(probab_e)
@@ -417,6 +444,7 @@ class Decoder(object):
                 tf.get_variable_scope().reuse_variables()
         beta_e = tf.stack(beta_e)
         beta_e = tf.transpose(beta_e, perm=(1, 0, 2))
+
         return beta_s, beta_e
 
 
