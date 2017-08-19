@@ -196,11 +196,32 @@ class Encoder(object):
         final_state = tf.concat([final_state_fw, final_state_bw], 1)
         states = tf.concat(outputs, 2)
         print("This is encoded paragraph.")
-        print(states)
+        # print(states)
         return final_state, states
 
 
 class Decoder(object):
+    '''
+    Settingが重要。
+    outer product -> 列ごとに足し算する用に変更。
+    生成モデルタスクだとどう変更するのが
+    Paragrah : 200 -> 150 メモリを小さくする。
+    ハイパーパラメーター：トレーニングセット
+    posタグを一緒にいれる。
+    構造の入れ方 -> Q type
+    質問の入れ方
+    パラグラフの長さ　
+    長さを切ってsyntacticのembeddingを入れる。
+
+    LSTMの初期値　: 一様分布で取るか？スケール？爆発することもある。
+    softmax : 0で初期化。
+    LSTM : 一様分布。0.1スケール。Forgetゲートを最初1で初期化する。tensorflow 0.1で初期化する。オーダーを参考にする。
+    Experiment setting 実装間違っている？
+
+    attention : tanh() sqrt(6)
+
+    '''
+
     def __init__(self, output_size):
         self.output_size = output_size * 2
 
@@ -401,7 +422,7 @@ class Decoder(object):
                 # beta has to be transposed.
                 z = tf.matmul(beta, H_r)
                 z = tf.reshape(z, [-1, 2 * output_size])
-                print(z.get_shape())
+                # print(z.get_shape())
                 _, state = cell(z, state, scope="Boundary-LSTM_start")
                 tf.get_variable_scope().reuse_variables()
 
@@ -445,11 +466,12 @@ class Decoder(object):
                     knowledge_rep, [-1, paragraph_length, 2 * output_size])
                 z = tf.matmul(beta, H_r)
                 z = tf.reshape(z, [-1, 2 * output_size])
-                print(z.get_shape())
+                # print(z.get_shape())
                 _, state = cell(z, state, scope="Boundary-LSTM_start")
                 tf.get_variable_scope().reuse_variables()
         beta_e = tf.stack(beta_e)
         beta_e = tf.transpose(beta_e, perm=(1, 0, 2))
+        # 列ごとの足し算する。attention普通のスコアに計算する。column wiseに足し算。
 
         return beta_s, beta_e
 
@@ -663,11 +685,11 @@ class QASystem(object):
 
         for [question_batch, context_batch, labels_batch, q_mask_batch, p_mask_batch] in \
                 get_minibatches([inputs['Questions'], inputs['Paragraphs'], inputs['Labels'], inputs['Questions_masks'], inputs['Paragraphs_masks']], self.config.batch_size):
-            self.start_index_loss, self.end_index_loss = self.optimize(
+            start_index_loss, end_index_loss = self.optimize(
                 session, question_batch, context_batch, labels_batch, q_mask_batch, p_mask_batch)
             n_minibatches += 1
 
-            losses.append([self.start_index_loss, self.start_index_loss])
+            losses.append([start_index_loss, start_index_loss])
 
         mean = np.mean(losses, axis=0)
         logging.info(
@@ -772,7 +794,7 @@ class QASystem(object):
                      (num_params, toc - tic))
         best_score = 0.
         print("Questions_masks")
-        print(dataset["Questions_masks"])
+        # print(dataset["Questions_masks"])
         for epoch in range(self.config.epochs):
             logging.info("Epoch %d out of %d", epoch + 1, self.config.epochs)
             logging.info("Best score so far: " + str(best_score))
