@@ -18,6 +18,7 @@ from util import ConfusionMatrix, Progbar, minibatches, get_minibatches
 from defs import LBLS
 
 logging.basicConfig(level=logging.INFO)
+LOGDIR = '/tmp/squad_tensorboard/'
 
 
 def preprocess_sequence_data(self, dataset):
@@ -248,6 +249,14 @@ class Decoder(object):
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
             state = tf.zeros([10, self.output_size])
 
+            tf.summary.histogram("Forward_Match-LSTM_W_Q", W_q)
+            tf.summary.histogram("Forward_Match-LSTM_W_p", W_p)
+            tf.summary.histogram("Forward_Match-LSTM_W_r", W_r)
+            tf.summary.histogram("Forward_Match-LSTM_biases", b_p)
+            tf.summary.histogram("Forward_Match-LSTM_biases", b)
+            tf.summary.histogram("Forward_Match-LSTM_weights", w)
+            tf.summary.histogram("Forward_Match-LSTM_states", state)
+
             for time_step in range(paragraph_length):
                 p_state = paragraph_states[:, time_step, :]
 
@@ -291,7 +300,6 @@ class Decoder(object):
                 # After being reshapes, the X_ is now (batch_size=10,
                 # question_length=100, output_size=200)
 
-                # TODO: attensin weight must be transposed. p.4
                 p_z = tf.matmul(atten, X_)
 
                 p_z = tf.reshape(p_z, [-1, self.output_size])
@@ -324,6 +332,14 @@ class Decoder(object):
             b = tf.get_variable("b", shape=(
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
             state = tf.zeros([10, self.output_size])
+
+            tf.summary.histogram("Backword_Match-LSTM_W_Q", W_q)
+            tf.summary.histogram("Backword_Match-LSTM_W_p", W_p)
+            tf.summary.histogram("Backword_Match-LSTM_W_r", W_r)
+            tf.summary.histogram("Backword_Match-LSTM_biases", b_p)
+            tf.summary.histogram("Backword_Match-LSTM_biases", b)
+            tf.summary.histogram("Backword_Match-LSTM_weights", w)
+            tf.summary.histogram("Backword_Match-LSTM_states", state)
 
             for time_step in range(paragraph_length):
                 p_state = paragraph_states[:, time_step, :]
@@ -402,6 +418,13 @@ class Decoder(object):
                                 initializer=tf.contrib.layers.xavier_initializer())
             state = tf.zeros([10, output_size])
 
+            tf.summary.histogram("Boundary-LSTM_start_V", V)
+            tf.summary.histogram("Boundary-LSTM_start_b_a", b_a)
+            tf.summary.histogram("Boundary-LSTM_start_W_a", W_a)
+            tf.summary.histogram("Boundary-LSTM_start_c", c)
+            tf.summary.histogram("Boundary-LSTM_start_v", v)
+            tf.summary.histogram("Boundary-LSTM_start_states", state)
+
             for time_step in range(paragraph_length):
                 H_r = tf.reshape(knowledge_rep, [-1, 2 * output_size])
                 first = tf.matmul(H_r, V)
@@ -445,6 +468,13 @@ class Decoder(object):
                 1, 1), initializer=tf.contrib.layers.xavier_initializer())
             v = tf.get_variable("v", shape=(output_size, 1),
                                 initializer=tf.contrib.layers.xavier_initializer())
+
+            tf.summary.histogram("Boundary-LSTM_end_V", V)
+            tf.summary.histogram("Boundary-LSTM_end_b_a", b_a)
+            tf.summary.histogram("Boundary-LSTM_end_W_a", W_a)
+            tf.summary.histogram("Boundary-LSTM_end_c", c)
+            tf.summary.histogram("Boundary-LSTM_end_v", v)
+            tf.summary.histogram("Boundary-LSTM_end_states", state)
             # 10 is output size.
             state = tf.zeros([10, output_size])
             for time_step in range(paragraph_length):
@@ -758,12 +788,16 @@ class QASystem(object):
         r = correct_preds / total_correct if correct_preds > 0 else 0
         f1 = 2 * p * r / (p + r) if correct_preds > 0 else 0
         em = correct_preds
+        tf.summary.scalar("f1", f1)
+        tf.summary.scalar("em", em)
+
+        merged = tf.summary.merge_all()
 
         if log:
             logging.info(
                 "F1: {}, EM: {}, for {} samples".format(f1, em, sample))
 
-        return f1, em
+        return f1, em, summary
 
     def train(self, session, dataset, train_dir):
         """
@@ -794,13 +828,21 @@ class QASystem(object):
                      (num_params, toc - tic))
         best_score = 0.
         print("Questions_masks")
-        # print(dataset["Questions_masks"])
+
+        train_writer = tf.summary.FileWriter(LOGDIR + '/train')
+        train_writer.add_graph(session.graph)
+        saver = tf.train.Saver()
+
         for epoch in range(self.config.epochs):
             logging.info("Epoch %d out of %d", epoch + 1, self.config.epochs)
             logging.info("Best score so far: " + str(best_score))
             loss = self.run_epoch(session, dataset)
-            f1, em = self.evaluate_answer(
+
+            f1, em, s = self.evaluate_answer(
                 session, dataset, sample=800, log=True)
+
+            train_writer.add_summary(s, epoch)
+            saver.save(sess, os.path.join(LOGDIR, "model.ckpt"), epoch)
             logging.info("loss: " + str(start_loss) + " f1: " +
                          str(f1) + " em:" + str(em))
             if f1 > best_score:
