@@ -18,7 +18,7 @@ from util import ConfusionMatrix, Progbar, minibatches, get_minibatches
 from defs import LBLS
 
 logging.basicConfig(level=logging.INFO)
-LOGDIR = '/tmp/squad_tensorboard/'
+LOGDIR = '/Users/akariasai/Projects/squad_tensorboard/'
 
 
 def preprocess_sequence_data(self, dataset):
@@ -128,7 +128,7 @@ class Encoder(object):
         length = tf.cast(length, tf.int32)
         return length
 
-    def encode_questions(self, inputs, masks, encoder_state_input):
+    def encode_questions(self, inputs, masks, encoder_state_input=None):
         """
         This is an encoder for question. Runing biLSTM over question.
         """
@@ -202,26 +202,6 @@ class Encoder(object):
 
 
 class Decoder(object):
-    '''
-    Settingが重要。
-    outer product -> 列ごとに足し算する用に変更。
-    生成モデルタスクだとどう変更するのが
-    Paragrah : 200 -> 150 メモリを小さくする。
-    ハイパーパラメーター：トレーニングセット
-    posタグを一緒にいれる。
-    構造の入れ方 -> Q type
-    質問の入れ方
-    パラグラフの長さ　
-    長さを切ってsyntacticのembeddingを入れる。
-
-    LSTMの初期値　: 一様分布で取るか？スケール？爆発することもある。
-    softmax : 0で初期化。
-    LSTM : 一様分布。0.1スケール。Forgetゲートを最初1で初期化する。tensorflow 0.1で初期化する。オーダーを参考にする。
-    Experiment setting 実装間違っている？
-
-    attention : tanh() sqrt(6)
-
-    '''
 
     def __init__(self, output_size):
         self.output_size = output_size * 2
@@ -567,10 +547,13 @@ class QASystem(object):
             self.s_grad_norm = tf.global_norm(s_grads)
             self.e_grad_norm = tf.global_norm(e_grads)
 
-        self.start_index_train_op = optimizer.apply_gradients(
-            zip(c_s_grads, s_vars))
-        self.end_index_train_op = optimizer.apply_gradients(
-            zip(c_e_grads, e_vars))
+        # self.start_index_train_op = optimizer.apply_gradients(
+        #     zip(c_s_grads, s_vars))
+        # self.end_index_train_op = optimizer.apply_gradients(
+        #     zip(c_e_grads, e_vars))
+        self.start_index_loss_train_op = optimizer.minimize(
+            self.start_index_loss)
+        self.end_index_train_op = optimizer.minimize(self.end_index_loss)
 
     def setup_system(self):
         """
@@ -581,6 +564,7 @@ class QASystem(object):
             self.q_embeddings, self.q_mask_placeholder, None)
         encoded_p, self.p_states = self.encoder.encode_w_attn(
             self.p_embeddings, self.p_mask_placeholder, self.q_states, scope="", reuse=False)
+
         self.knowledge_rep = self.decoder.match_LSTM(
             self.q_states, self.p_states, self.q_max_length, self.p_max_length)
         self.preds = self.decoder.decode(
@@ -640,6 +624,9 @@ class QASystem(object):
         _, start_index_loss = session.run(start_output_feed, input_feed)
         end_output_feed = [self.end_index_train_op, self.end_index_loss]
         _, end_index_loss = session.run(end_output_feed, input_feed)
+        print("start index loss : " + str(start_index_loss))
+        print()
+        print("end index loss : " + str(end_index_loss))
 
         return start_index_loss, end_index_loss
 
