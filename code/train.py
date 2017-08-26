@@ -21,7 +21,7 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_integer(
     "batch_size", 10, "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("epochs", 10, "Number of epochs to train.")
-tf.app.flags.DEFINE_integer("state_size", 200, "Size of each model layer.")
+tf.app.flags.DEFINE_integer("state_size", 100, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("question_size", 100, "The max size of questions.")
 tf.app.flags.DEFINE_integer("paragraph_size", 766,
                             "The output size of your model.")
@@ -46,7 +46,7 @@ tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat",
                            "Path to vocab file (default: ./data/squad/vocab.dat)")
 tf.app.flags.DEFINE_string(
     "embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
-tf.app.flags.DEFINE_float  ("learning_rate_decay", 0.9999, "Learning rate.")
+tf.app.flags.DEFINE_float("learning_rate_decay", 0.9999, "Learning rate.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -127,7 +127,8 @@ def initialize_datasets(data_dir, dataset='train', debugMode=False):
 
     print("____________________________l done dataset____________________________________")
 
-    print("Len of question: (should be 81398 ==) {0}" .format(len(output['Questions'])))
+    print("Len of question: (should be 81398 ==) {0}" .format(
+        len(output['Questions'])))
     print(len(output['Paragraphs']))
     print(len(output['Labels']))
     # Close files
@@ -156,9 +157,11 @@ def main(FLAGS):
     embeddings = np.load(embed_path)['glove']
 
     encoder = Encoder(size=FLAGS.output_size, vocab_dim=FLAGS.embedding_size)
+
     decoder = Decoder(output_size=FLAGS.output_size)
 
     qa = QASystem(encoder, decoder, FLAGS, embeddings)
+    #qa = QASystem(encoder, FLAGS, embeddings)
 
     if not os.path.exists(FLAGS.log_dir):
         os.makedirs(FLAGS.log_dir)
@@ -178,6 +181,8 @@ def main(FLAGS):
         print("Load Training Data")
         dataset = initialize_datasets(
             FLAGS.data_dir, dataset='train', debugMode=True)
+        # encoder.encode_question(
+        #     dataset['Questions'], question['Questions_masks'])
         print(80 * "=")
         print("Training")
         print(80 * "=")
