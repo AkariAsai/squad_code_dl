@@ -21,35 +21,6 @@ logging.basicConfig(level=logging.INFO)
 LOGDIR = '/Users/akariasai/Projects/squad_tensorboard/'
 
 
-def preprocess_sequence_data(self, dataset):
-    max_c = self.config.max_c
-    max_q = self.config.max_q
-
-    stop = next((idx for idx, xi in enumerate(dataset)
-                 if len(xi[0]) > max_c), len(dataset))
-    assert len(dataset[stop - 1][0]) <= max_c
-
-    c_ids = np.array([xi[0] + [0] * (max_c - len(xi[0]))
-                      for xi in dataset[:stop]], dtype=np.int32)
-    q_ids = np.array([xi[1] + [0] * (max_q - len(xi[1]))
-                      for xi in dataset[:stop]], dtype=np.int32)
-
-    span = np.array([xi[2] for xi in dataset[:stop]], dtype=np.int32)
-
-    c_len = np.array([len(xi[0]) for xi in dataset[:stop]], dtype=np.int32)
-    q_len = np.array([len(xi[1]) for xi in dataset[:stop]], dtype=np.int32)
-
-    data_size = c_ids.shape[0]
-
-    assert q_ids.shape[0] == data_size
-    assert c_ids.shape == (data_size, max_c)
-    assert q_len.shape == (data_size,)
-    assert c_len.shape == (data_size,)
-    assert span.shape == (data_size, 2)
-
-    return [c_ids, c_len, q_ids, q_len, span]
-
-
 def get_optimizer(opt):
     if opt == "adam":
         optfn = tf.train.AdamOptimizer
@@ -129,9 +100,6 @@ class Encoder(object):
         return length
 
     def encode_questions(self, inputs, masks, encoder_state_input=None):
-        """
-        This is an encoder for question. Runing biLSTM over question.
-        """
         """
         In a generalized encode function, you pass in your inputs,
         masks, and an initial
@@ -249,10 +217,6 @@ class Decoder(object):
 
                 # W_pH_p + W_th_{i-1} + b_q
                 # The shape is (batch_size, output_size, 1), R^{l x 1}
-                # print(p_state.get_shape())
-                # print(W_p.get_shape())
-                # print(state.get_shape())
-                # print(W_r.get_shape())
                 p_intm = tf.matmul(p_state, W_p) + tf.matmul(state, W_r) + b_p
 
                 # The e_q is a column vector filled with 1, whose length=Q
