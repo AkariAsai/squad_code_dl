@@ -132,6 +132,13 @@ def initialize_datasets(data_dir, dataset='train', debugMode=False):
     print(len(output['Paragraphs']))
     print(len(output['Labels']))
     # Close files
+    output['Questions'] = output['Questions'][:20]
+    output['Paragraphs'] = output['Paragraphs'][:20]
+    output['Labels'] = output['Labels'][:20]
+    print("Len of trimmed question: (should be 20 ==) {0}" .format(
+        len(output['Questions'])))
+    print(len(output['Paragraphs']))
+    print(len(output['Labels']))
     questions.close()
     paragraphs.close()
     labels.close()
