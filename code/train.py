@@ -98,7 +98,7 @@ def get_normalized_train_dir(train_dir):
 
 def initialize_datasets(data_dir, dataset='train', debugMode=False):
     # Open files
-    print("____________________________initializing dataset____________________________________")
+    print("____________________________initializing dataset____________________________")
     questions = open(data_dir + '/' + dataset + '.ids.question', 'rt')
     paragraphs = open(data_dir + '/' + dataset + '.ids.context', 'rt')
     labels = open(data_dir + '/' + dataset + '.span', 'rt')
@@ -107,10 +107,6 @@ def initialize_datasets(data_dir, dataset='train', debugMode=False):
     output['Questions'] = []
     output['Paragraphs'] = []
     output['Labels'] = []
-
-    # # index  = 0
-    # print([[int(wordId) for wordId in q.split()] for q in questions])
-    # print([[int(wordId) for wordId in p.split()] for p in questions])
 
     q_count = 0
     for q in questions:
@@ -156,7 +152,6 @@ def main(FLAGS):
     print (80 * "=")
     print ("INITIALIZING")
     print (80 * "=")
-    # Do what you need to load datasets from FLAGS.data_dir
 
     #parser, embeddings, train_examples, dev_set, test_set = load_and_preprocess_data(debug)
     if not os.path.exists('./data/weights/'):
