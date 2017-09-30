@@ -383,11 +383,10 @@ class Decoder(object):
 
                 for time_step in range(paragraph_length):
                     H_r = tf.reshape(knowledge_rep, [-1, 2 * output_size])
-                    H_r_0 = tf.concat(H_r, tf.zeros([1, 2 * output_size], tf.float32))
 
-                    first = tf.matmul(H_r_0, V)
+                    first = tf.matmul(H_r, V)
                     e_p1_t = tf.ones(
-                        [tf.shape(H_r_0)[0], tf.shape(knowledge_rep)[0]])
+                        [tf.shape(H_r)[0], tf.shape(knowledge_rep)[0]])
                     second = tf.matmul(e_p1_t, tf.matmul(state, W_a) + b_a)
                     F_s = tf.nn.tanh(first + second)
 
@@ -432,11 +431,10 @@ class Decoder(object):
                 state = tf.zeros([10, output_size])
                 for time_step in range(paragraph_length):
                     H_r = tf.reshape(knowledge_rep, [-1, 2 * output_size])
-                    H_r_0 = tf.concat(H_r, tf.zeros([1, 2 * output_size], tf.float32))
-                    first = tf.matmul(H_r_0, V)
+                    first = tf.matmul(H_r, V)
 
                     e_p1_t = tf.ones(
-                        [tf.shape(H_r_0)[0], tf.shape(knowledge_rep)[0]])
+                        [tf.shape(H_r)[0], tf.shape(knowledge_rep)[0]])
                     second = tf.matmul(e_p1_t, tf.matmul(state, W_a) + b_a)
                     F_s = tf.nn.tanh(first + second)
 
