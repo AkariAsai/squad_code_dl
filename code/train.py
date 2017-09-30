@@ -112,7 +112,8 @@ def initialize_datasets(data_dir, dataset='train', debugMode=False):
     for q in questions:
         q_count += 1
         output['Questions'].append([int(wordId) for wordId in q.split()])
-        if q_count >= 20:
+        # FIXME: The number of data should be fixed.
+        if q_count >= 100:
             break
     print("____________________________q done dataset____________________________________")
 
@@ -120,7 +121,7 @@ def initialize_datasets(data_dir, dataset='train', debugMode=False):
     for p in paragraphs:
         p_count += 1
         output['Paragraphs'].append([int(wordId) for wordId in p.split()])
-        if p_count >= 20:
+        if p_count >= 100:
             break
 
     print("____________________________p done dataset____________________________________")
@@ -130,12 +131,12 @@ def initialize_datasets(data_dir, dataset='train', debugMode=False):
         l_count += 1
         l = [int(labelIdx) for labelIdx in l.split()]
         output['Labels'].append(l)
-        if l_count >= 20:
+        if l_count >= 100:
             break
 
     print("____________________________l done dataset____________________________________")
 
-    print("Len of question: (should be 20 ==) {0}" .format(
+    print("Len of question: (should be 100 ==) {0}" .format(
         len(output['Questions'])))
     print(len(output['Paragraphs']))
     print(len(output['Labels']))

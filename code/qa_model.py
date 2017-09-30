@@ -18,7 +18,7 @@ from util import ConfusionMatrix, Progbar, minibatches, get_minibatches
 from defs import LBLS
 
 logging.basicConfig(level=logging.INFO)
-LOGDIR = '~/squad_tensorboard/'
+LOGDIR = '~tensorboard2'
 
 
 def get_optimizer(opt):
@@ -197,144 +197,144 @@ class Decoder(object):
             num_units=self.output_size // 2, state_is_tuple=False)
         fw_states = []
 
-        # with tf.device('/gpu:0'):
-        with tf.variable_scope("Forward_Match-LSTM"):
-            W_q = tf.get_variable("W_q", shape=(
-                self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
-            W_p = tf.get_variable("W_p", shape=(
-                self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
-            W_r = tf.get_variable("W_r", shape=(
-                self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
-            b_p = tf.get_variable("b_p", shape=(
-                1, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
-            w = tf.get_variable("w", shape=(self.output_size, 1),
-                                initializer=tf.contrib.layers.xavier_initializer())
-            b = tf.get_variable("b", shape=(
-                1, 1), initializer=tf.contrib.layers.xavier_initializer())
-            state = tf.zeros([10, self.output_size])
+        with tf.device('/gpu:0'):
+            with tf.variable_scope("Forward_Match-LSTM"):
+                W_q = tf.get_variable("W_q", shape=(
+                    self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
+                W_p = tf.get_variable("W_p", shape=(
+                    self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
+                W_r = tf.get_variable("W_r", shape=(
+                    self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
+                b_p = tf.get_variable("b_p", shape=(
+                    1, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
+                w = tf.get_variable("w", shape=(self.output_size, 1),
+                                    initializer=tf.contrib.layers.xavier_initializer())
+                b = tf.get_variable("b", shape=(
+                    1, 1), initializer=tf.contrib.layers.xavier_initializer())
+                state = tf.zeros([10, self.output_size])
 
-            tf.summary.histogram("Forward_Match-LSTM_W_Q", W_q)
-            tf.summary.histogram("Forward_Match-LSTM_W_p", W_p)
-            tf.summary.histogram("Forward_Match-LSTM_W_r", W_r)
-            tf.summary.histogram("Forward_Match-LSTM_biases", b_p)
-            tf.summary.histogram("Forward_Match-LSTM_biases", b)
-            tf.summary.histogram("Forward_Match-LSTM_weights", w)
-            tf.summary.histogram("Forward_Match-LSTM_states", state)
+                # tf.summary.histogram("Forward_Match-LSTM_W_Q", W_q)
+                # tf.summary.histogram("Forward_Match-LSTM_W_p", W_p)
+                # tf.summary.histogram("Forward_Match-LSTM_W_r", W_r)
+                # tf.summary.histogram("Forward_Match-LSTM_biases", b_p)
+                # tf.summary.histogram("Forward_Match-LSTM_biases", b)
+                # tf.summary.histogram("Forward_Match-LSTM_weights", w)
+                # tf.summary.histogram("Forward_Match-LSTM_states", state)
 
-            for time_step in range(paragraph_length):
-                p_state = paragraph_states[:, time_step, :]
+                for time_step in range(paragraph_length):
+                    p_state = paragraph_states[:, time_step, :]
 
-                # Reshapes to 2-D, (batch_size * q_length) *
-                # output_shape(=l)
-                X_ = tf.reshape(questions_states, [-1, self.output_size])
+                    # Reshapes to 2-D, (batch_size * q_length) *
+                    # output_shape(=l)
+                    X_ = tf.reshape(questions_states, [-1, self.output_size])
 
-                # an Intermediate value of question states.
-                # The shape is (Q, l)
-                q_intm = tf.matmul(X_, W_q)
+                    # an Intermediate value of question states.
+                    # The shape is (Q, l)
+                    q_intm = tf.matmul(X_, W_q)
 
-                # W_pH_p + W_th_{i-1} + b_q
-                # The shape is (batch_size, output_size, 1), R^{l x 1}
-                p_intm = tf.matmul(p_state, W_p) + \
-                    tf.matmul(state, W_r) + b_p
+                    # W_pH_p + W_th_{i-1} + b_q
+                    # The shape is (batch_size, output_size, 1), R^{l x 1}
+                    p_intm = tf.matmul(p_state, W_p) + \
+                        tf.matmul(state, W_r) + b_p
 
-                # The e_q is a column vector filled with 1, whose length=Q
-                # e_q_t is transposed matrix of e_q.
-                # The sape is (Q, batch_size)
-                e_q_t = tf.ones([tf.shape(X_)[0], tf.shape(p_state)[0]])
+                    # The e_q is a column vector filled with 1, whose length=Q
+                    # e_q_t is transposed matrix of e_q.
+                    # The sape is (Q, batch_size)
+                    e_q_t = tf.ones([tf.shape(X_)[0], tf.shape(p_state)[0]])
 
-                # Produces matrix by repeating vector/matrix p_intm Q
-                # times.
-                p_intm_converted = tf.matmul(e_q_t, p_intm)
-                # p_intm_converted shape is (1000, 200), same as q_intm
-                sum_p_q = q_intm + p_intm_converted
+                    # Produces matrix by repeating vector/matrix p_intm Q
+                    # times.
+                    p_intm_converted = tf.matmul(e_q_t, p_intm)
+                    # p_intm_converted shape is (1000, 200), same as q_intm
+                    sum_p_q = q_intm + p_intm_converted
 
-                # G is the output value of activation function tanh.
-                G = tf.nn.tanh(sum_p_q)
+                    # G is the output value of activation function tanh.
+                    G = tf.nn.tanh(sum_p_q)
 
-                # calculate attention weight, for the i th token.
-                # atten shape is now (1000, 1).
-                atten = tf.nn.softmax(tf.matmul(G, w) + b)
+                    # calculate attention weight, for the i th token.
+                    # atten shape is now (1000, 1).
+                    atten = tf.nn.softmax(tf.matmul(G, w) + b)
 
-                # Reshapes attention vector, shape is (b_size=10, 1, Q=100)
-                atten = tf.reshape(atten, [-1, 1, question_length])
+                    # Reshapes attention vector, shape is (b_size=10, 1, Q=100)
+                    atten = tf.reshape(atten, [-1, 1, question_length])
 
-                X_ = tf.reshape(questions_states,
-                                [-1, question_length, self.output_size])
-                # After being reshapes, the X_ is now (batch_size=10,
-                # question_length=100, output_size=200)
+                    X_ = tf.reshape(questions_states,
+                                    [-1, question_length, self.output_size])
+                    # After being reshapes, the X_ is now (batch_size=10,
+                    # question_length=100, output_size=200)
 
-                p_z = tf.matmul(atten, X_)
+                    p_z = tf.matmul(atten, X_)
 
-                p_z = tf.reshape(p_z, [-1, self.output_size])
-                z = tf.concat([p_state, p_z], 1)
+                    p_z = tf.reshape(p_z, [-1, self.output_size])
+                    z = tf.concat([p_state, p_z], 1)
 
-                o, state = cell(z, state)
+                    o, state = cell(z, state)
 
-                fw_states.append(state)
-                tf.get_variable_scope().reuse_variables()
+                    fw_states.append(state)
+                    tf.get_variable_scope().reuse_variables()
 
-        fw_states = tf.stack(fw_states)
-        fw_states = tf.transpose(fw_states, perm=(1, 0, 2))
+            fw_states = tf.stack(fw_states)
+            fw_states = tf.transpose(fw_states, perm=(1, 0, 2))
 
-        cell = tf.contrib.rnn.LSTMCell(
-            num_units=self.output_size // 2, state_is_tuple=False)
-        bk_states = []
-        print("Forward MatchLSTM done.")
+            cell = tf.contrib.rnn.LSTMCell(
+                num_units=self.output_size // 2, state_is_tuple=False)
+            bk_states = []
+            print("Forward MatchLSTM done.")
 
-        with tf.variable_scope("Backward_Match-LSTM"):
-            W_q = tf.get_variable("W_q", shape=(
-                self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
-            W_p = tf.get_variable("W_p", shape=(
-                self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
-            W_r = tf.get_variable("W_r", shape=(
-                self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
-            b_p = tf.get_variable("b_p", shape=(
-                1, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
-            w = tf.get_variable("w", shape=(self.output_size, 1),
-                                initializer=tf.contrib.layers.xavier_initializer())
-            b = tf.get_variable("b", shape=(
-                1, 1), initializer=tf.contrib.layers.xavier_initializer())
-            state = tf.zeros([10, self.output_size])
+            with tf.variable_scope("Backward_Match-LSTM"):
+                W_q = tf.get_variable("W_q", shape=(
+                    self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
+                W_p = tf.get_variable("W_p", shape=(
+                    self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
+                W_r = tf.get_variable("W_r", shape=(
+                    self.output_size, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
+                b_p = tf.get_variable("b_p", shape=(
+                    1, self.output_size), initializer=tf.contrib.layers.xavier_initializer())
+                w = tf.get_variable("w", shape=(self.output_size, 1),
+                                    initializer=tf.contrib.layers.xavier_initializer())
+                b = tf.get_variable("b", shape=(
+                    1, 1), initializer=tf.contrib.layers.xavier_initializer())
+                state = tf.zeros([10, self.output_size])
 
-            tf.summary.histogram("Backword_Match-LSTM_W_Q", W_q)
-            tf.summary.histogram("Backword_Match-LSTM_W_p", W_p)
-            tf.summary.histogram("Backword_Match-LSTM_W_r", W_r)
-            tf.summary.histogram("Backword_Match-LSTM_biases", b_p)
-            tf.summary.histogram("Backword_Match-LSTM_biases", b)
-            tf.summary.histogram("Backword_Match-LSTM_weights", w)
-            tf.summary.histogram("Backword_Match-LSTM_states", state)
+                # tf.summary.histogram("Backword_Match-LSTM_W_Q", W_q)
+                # tf.summary.histogram("Backword_Match-LSTM_W_p", W_p)
+                # tf.summary.histogram("Backword_Match-LSTM_W_r", W_r)
+                # tf.summary.histogram("Backword_Match-LSTM_biases", b_p)
+                # tf.summary.histogram("Backword_Match-LSTM_biases", b)
+                # tf.summary.histogram("Backword_Match-LSTM_weights", w)
+                # tf.summary.histogram("Backword_Match-LSTM_states", state)
 
-            for time_step in range(paragraph_length):
-                p_state = paragraph_states[:, time_step, :]
-                X_ = tf.reshape(questions_states, [-1, self.output_size])
+                for time_step in range(paragraph_length):
+                    p_state = paragraph_states[:, time_step, :]
+                    X_ = tf.reshape(questions_states, [-1, self.output_size])
 
-                e_q_t = tf.ones([tf.shape(X_)[0], tf.shape(p_state)[0]])
+                    e_q_t = tf.ones([tf.shape(X_)[0], tf.shape(p_state)[0]])
 
-                q_intm = tf.matmul(X_, W_q)
-                p_intm = tf.matmul(p_state, W_p) + \
-                    tf.matmul(state, W_r) + b_p
+                    q_intm = tf.matmul(X_, W_q)
+                    p_intm = tf.matmul(p_state, W_p) + \
+                        tf.matmul(state, W_r) + b_p
 
-                p_intm_converted = tf.matmul(e_q_t, p_intm)
-                sum_p_q = q_intm + p_intm_converted
-                G = tf.nn.tanh(sum_p_q)
+                    p_intm_converted = tf.matmul(e_q_t, p_intm)
+                    sum_p_q = q_intm + p_intm_converted
+                    G = tf.nn.tanh(sum_p_q)
 
-                atten = tf.nn.softmax(tf.matmul(G, w) + b)
-                atten = tf.reshape(atten, [-1, 1, question_length])
-                X_ = tf.reshape(questions_states,
-                                [-1, question_length, self.output_size])
+                    atten = tf.nn.softmax(tf.matmul(G, w) + b)
+                    atten = tf.reshape(atten, [-1, 1, question_length])
+                    X_ = tf.reshape(questions_states,
+                                    [-1, question_length, self.output_size])
 
-                p_z = tf.matmul(atten, X_)
+                    p_z = tf.matmul(atten, X_)
 
-                p_z = tf.reshape(p_z, [-1, self.output_size])
-                z = tf.concat([p_state, p_z], 1)
-                o, state = cell(z, state)
+                    p_z = tf.reshape(p_z, [-1, self.output_size])
+                    z = tf.concat([p_state, p_z], 1)
+                    o, state = cell(z, state)
 
-                bk_states.append(state)
-                tf.get_variable_scope().reuse_variables()
-        print("backward decoding done.")
+                    bk_states.append(state)
+                    tf.get_variable_scope().reuse_variables()
+            print("backward decoding done.")
 
-        bk_states = tf.stack(bk_states)
-        bk_states = tf.transpose(bk_states, perm=(1, 0, 2))
+            bk_states = tf.stack(bk_states)
+            bk_states = tf.transpose(bk_states, perm=(1, 0, 2))
 
         knowledge_rep = tf.concat([fw_states, bk_states], 2)
 
@@ -360,99 +360,101 @@ class Decoder(object):
             num_units=output_size // 2, state_is_tuple=False)
         beta_s = []
 
-        # with tf.device('/gpu:0'):
-        with tf.variable_scope("Boundary-LSTM_start"):
-            V = tf.get_variable("V", shape=(
-                2 * output_size, output_size), initializer=tf.contrib.layers.xavier_initializer())
-            b_a = tf.get_variable("b_a", shape=(
-                1, output_size), initializer=tf.contrib.layers.xavier_initializer())
-            W_a = tf.get_variable("W_a", shape=(
-                output_size, output_size), initializer=tf.contrib.layers.xavier_initializer())
-            c = tf.get_variable("c", shape=(
-                1, 1), initializer=tf.contrib.layers.xavier_initializer())
-            v = tf.get_variable("v", shape=(output_size, 1),
-                                initializer=tf.contrib.layers.xavier_initializer())
-            state = tf.zeros([10, output_size])
+        with tf.device('/gpu:0'):
+            with tf.variable_scope("Boundary-LSTM_start"):
+                V = tf.get_variable("V", shape=(
+                    2 * output_size, output_size), initializer=tf.contrib.layers.xavier_initializer())
+                b_a = tf.get_variable("b_a", shape=(
+                    1, output_size), initializer=tf.contrib.layers.xavier_initializer())
+                W_a = tf.get_variable("W_a", shape=(
+                    output_size, output_size), initializer=tf.contrib.layers.xavier_initializer())
+                c = tf.get_variable("c", shape=(
+                    1, 1), initializer=tf.contrib.layers.xavier_initializer())
+                v = tf.get_variable("v", shape=(output_size, 1),
+                                    initializer=tf.contrib.layers.xavier_initializer())
+                state = tf.zeros([10, output_size])
 
-            # tf.summary.histogram("Boundary-LSTM_start_V", V)
-            # tf.summary.histogram("Boundary-LSTM_start_b_a", b_a)
-            # tf.summary.histogram("Boundary-LSTM_start_W_a", W_a)
-            # tf.summary.histogram("Boundary-LSTM_start_c", c)
-            # tf.summary.histogram("Boundary-LSTM_start_v", v)
-            # tf.summary.histogram("Boundary-LSTM_start_states", state)
+                # tf.summary.histogram("Boundary-LSTM_start_V", V)
+                # tf.summary.histogram("Boundary-LSTM_start_b_a", b_a)
+                # tf.summary.histogram("Boundary-LSTM_start_W_a", W_a)
+                # tf.summary.histogram("Boundary-LSTM_start_c", c)
+                # tf.summary.histogram("Boundary-LSTM_start_v", v)
+                # tf.summary.histogram("Boundary-LSTM_start_states", state)
 
-            for time_step in range(paragraph_length):
-                H_r = tf.reshape(knowledge_rep, [-1, 2 * output_size])
-                first = tf.matmul(H_r, V)
+                for time_step in range(paragraph_length):
+                    H_r = tf.reshape(knowledge_rep, [-1, 2 * output_size])
+                    H_r_0 = tf.concat(H_r, tf.zeros([1, 2 * output_size], tf.float32))
 
-                e_p1_t = tf.ones(
-                    [tf.shape(H_r)[0], tf.shape(knowledge_rep)[0]])
-                second = tf.matmul(e_p1_t, tf.matmul(state, W_a) + b_a)
-                F_s = tf.nn.tanh(first + second)
+                    first = tf.matmul(H_r_0, V)
+                    e_p1_t = tf.ones(
+                        [tf.shape(H_r_0)[0], tf.shape(knowledge_rep)[0]])
+                    second = tf.matmul(e_p1_t, tf.matmul(state, W_a) + b_a)
+                    F_s = tf.nn.tanh(first + second)
 
-                beta = tf.nn.softmax(tf.matmul(F_s, v) + c)
-                probab_s = tf.reshape(beta, shape=[-1, paragraph_length])
-                beta_s.append(probab_s)
-                # prob shape (10, 766)
-                beta = tf.reshape(beta, [-1, 1, paragraph_length])
-                H_r = tf.reshape(
-                    knowledge_rep, [-1, paragraph_length, 2 * output_size])
+                    beta = tf.nn.softmax(tf.matmul(F_s, v) + c)
+                    probab_s = tf.reshape(beta, shape=[-1, paragraph_length])
+                    beta_s.append(probab_s)
+                    # prob shape (10, 766)
+                    beta = tf.reshape(beta, [-1, 1, paragraph_length])
+                    H_r = tf.reshape(
+                        knowledge_rep, [-1, paragraph_length, 2 * output_size])
 
-                z = tf.matmul(beta, H_r)
-                z = tf.reshape(z, [-1, 2 * output_size])
-                _, state = cell(z, state, scope="Boundary-LSTM_start")
-                tf.get_variable_scope().reuse_variables()
+                    z = tf.matmul(beta, H_r)
+                    z = tf.reshape(z, [-1, 2 * output_size])
+                    _, state = cell(z, state, scope="Boundary-LSTM_start")
+                    tf.get_variable_scope().reuse_variables()
 
-        beta_s = tf.stack(beta_s)
-        beta_s = tf.transpose(beta_s, perm=(1, 0, 2))
+            beta_s = tf.stack(beta_s)
+            beta_s = tf.transpose(beta_s, perm=(1, 0, 2))
 
-        beta_e = []
-        with tf.variable_scope("Boundary-LSTM_end"):
-            cell = tf.contrib.rnn.LSTMCell(
-                num_units=output_size // 2, state_is_tuple=False)
-            V = tf.get_variable("V", shape=(
-                2 * output_size, output_size), initializer=tf.contrib.layers.xavier_initializer())
-            b_a = tf.get_variable("b_a", shape=(
-                1, output_size), initializer=tf.contrib.layers.xavier_initializer())
-            W_a = tf.get_variable("W_a", shape=(
-                output_size, output_size), initializer=tf.contrib.layers.xavier_initializer())
-            c = tf.get_variable("c", shape=(
-                1, 1), initializer=tf.contrib.layers.xavier_initializer())
-            v = tf.get_variable("v", shape=(output_size, 1),
-                                initializer=tf.contrib.layers.xavier_initializer())
+            beta_e = []
+            with tf.variable_scope("Boundary-LSTM_end"):
+                cell = tf.contrib.rnn.LSTMCell(
+                    num_units=output_size // 2, state_is_tuple=False)
+                V = tf.get_variable("V", shape=(
+                    2 * output_size, output_size), initializer=tf.contrib.layers.xavier_initializer())
+                b_a = tf.get_variable("b_a", shape=(
+                    1, output_size), initializer=tf.contrib.layers.xavier_initializer())
+                W_a = tf.get_variable("W_a", shape=(
+                    output_size, output_size), initializer=tf.contrib.layers.xavier_initializer())
+                c = tf.get_variable("c", shape=(
+                    1, 1), initializer=tf.contrib.layers.xavier_initializer())
+                v = tf.get_variable("v", shape=(output_size, 1),
+                                    initializer=tf.contrib.layers.xavier_initializer())
 
-            # tf.summary.histogram("Boundary-LSTM_end_V", V)
-            # tf.summary.histogram("Boundary-LSTM_end_b_a", b_a)
-            # tf.summary.histogram("Boundary-LSTM_end_W_a", W_a)
-            # tf.summary.histogram("Boundary-LSTM_end_c", c)
-            # tf.summary.histogram("Boundary-LSTM_end_v", v)
-            # tf.summary.histogram("Boundary-LSTM_end_states", state)
-            # 10 is output size.
-            state = tf.zeros([10, output_size])
-            for time_step in range(paragraph_length):
-                H_r = tf.reshape(knowledge_rep, [-1, 2 * output_size])
-                first = tf.matmul(H_r, V)
+                # tf.summary.histogram("Boundary-LSTM_end_V", V)
+                # tf.summary.histogram("Boundary-LSTM_end_b_a", b_a)
+                # tf.summary.histogram("Boundary-LSTM_end_W_a", W_a)
+                # tf.summary.histogram("Boundary-LSTM_end_c", c)
+                # tf.summary.histogram("Boundary-LSTM_end_v", v)
+                # tf.summary.histogram("Boundary-LSTM_end_states", state)
+                # 10 is output size.
+                state = tf.zeros([10, output_size])
+                for time_step in range(paragraph_length):
+                    H_r = tf.reshape(knowledge_rep, [-1, 2 * output_size])
+                    H_r_0 = tf.concat(H_r, tf.zeros([1, 2 * output_size], tf.float32))
+                    first = tf.matmul(H_r_0, V)
 
-                e_p1_t = tf.ones(
-                    [tf.shape(H_r)[0], tf.shape(knowledge_rep)[0]])
-                second = tf.matmul(e_p1_t, tf.matmul(state, W_a) + b_a)
-                F_s = tf.nn.tanh(first + second)
+                    e_p1_t = tf.ones(
+                        [tf.shape(H_r_0)[0], tf.shape(knowledge_rep)[0]])
+                    second = tf.matmul(e_p1_t, tf.matmul(state, W_a) + b_a)
+                    F_s = tf.nn.tanh(first + second)
 
-                beta = tf.nn.softmax(tf.matmul(F_s, v) + c)
+                    beta = tf.nn.softmax(tf.matmul(F_s, v) + c)
 
-                probab_e = tf.reshape(beta, shape=[-1, paragraph_length])
-                beta_e.append(probab_e)
+                    probab_e = tf.reshape(beta, shape=[-1, paragraph_length])
+                    beta_e.append(probab_e)
 
-                beta = tf.reshape(beta, [-1, 1, paragraph_length])
-                H_r = tf.reshape(
-                    knowledge_rep, [-1, paragraph_length, 2 * output_size])
-                z = tf.matmul(beta, H_r)
-                z = tf.reshape(z, [-1, 2 * output_size])
-                # print(z.get_shape())
-                _, state = cell(z, state, scope="Boundary-LSTM_start")
-                tf.get_variable_scope().reuse_variables()
-        beta_e = tf.stack(beta_e)
-        beta_e = tf.transpose(beta_e, perm=(1, 0, 2))
+                    beta = tf.reshape(beta, [-1, 1, paragraph_length])
+                    H_r = tf.reshape(
+                        knowledge_rep, [-1, paragraph_length, 2 * output_size])
+                    z = tf.matmul(beta, H_r)
+                    z = tf.reshape(z, [-1, 2 * output_size])
+
+                    _, state = cell(z, state, scope="Boundary-LSTM_start")
+                    tf.get_variable_scope().reuse_variables()
+            beta_e = tf.stack(beta_e)
+            beta_e = tf.transpose(beta_e, perm=(1, 0, 2))
 
         return beta_s, beta_e
 
@@ -552,7 +554,7 @@ class QASystem(object):
         preds = np.array(self.preds)
         with vs.variable_scope("start_index_loss"):
             loss_tensor = tf.boolean_mask(tf.nn.sparse_softmax_cross_entropy_with_logits(
-                logits=preds[0], labels=self.start_labels_placeholder), self.p_mask_placeholder)
+                logits=self.preds[0], labels=self.start_labels_placeholder), self.p_mask_placeholder)
             start_index_loss = tf.reduce_mean(loss_tensor, 0)
             tf.summary.scalar(
                 'start_index_cross_entroy_loss', start_index_loss)
@@ -599,14 +601,13 @@ class QASystem(object):
             question_batch, context_batch, labels_batch, q_mask_batch, p_mask_batch)
 
         start_output_feed = [self.start_index_train_op, self.start_index_loss]
-        _, start_index_loss = session.run(start_output_feed, input_feed)
+        _, start_index_loss_val = session.run(start_output_feed, input_feed)
         end_output_feed = [self.end_index_train_op, self.end_index_loss]
-        _, end_index_loss = session.run(end_output_feed, input_feed)
+        _, end_index_loss_val = session.run(end_output_feed, input_feed)
         print("start index loss : " + str(start_index_loss))
-        print()
         print("end index loss : " + str(end_index_loss))
 
-        return start_index_loss, end_index_loss
+        return start_index_loss_val, end_index_loss_val
 
     def test(self, session, valid_x, valid_y):
         # TODO: Add test.
@@ -625,7 +626,7 @@ class QASystem(object):
         so that other methods like self.answer() will be able to work properly
         :return:
         """
-        input_feed = {}
+        input_feed = self.create_feed_dict(train_x['Questions'], context_batch['Paragraphs'], train_x['Labels'], train_x['Questions_masks'], train_x['Paragraphs_masks'])
 
         if train_x is not None:
             input_feed[self.q_placeholder] = train_x['Questions']
@@ -690,15 +691,15 @@ class QASystem(object):
 
         for [question_batch, context_batch, labels_batch, q_mask_batch, p_mask_batch] in \
                 get_minibatches([inputs['Questions'], inputs['Paragraphs'], inputs['Labels'], inputs['Questions_masks'], inputs['Paragraphs_masks']], self.config.batch_size):
-            start_index_loss, end_index_loss = self.optimize(
+            start_index_loss_val, end_index_loss_val = self.optimize(
                 session, question_batch, context_batch, labels_batch, q_mask_batch, p_mask_batch)
             n_minibatches += 1
 
-            losses.append([start_index_loss, start_index_loss])
+            losses.append([start_index_loss_val, end_index_loss_val])
 
         mean = np.mean(losses, axis=0)
         logging.info(
-            "Logged mean epoch losses: train : %f dev : %f ", mean[0], mean[1])
+            "Logged mean epoch losses: start : %f end : %f ", mean[0], mean[1])
 
         return losses
 
@@ -719,6 +720,7 @@ class QASystem(object):
     def evaluate_answer(self, session, dataset, sample=100, log=False):
         idx_sample = np.random.randint(
             0, dataset['Questions'].shape[0], sample)
+
         examples = {}
         examples['Questions'] = dataset['Questions'][idx_sample]
         examples['Paragraphs'] = dataset['Paragraphs'][idx_sample]
@@ -746,6 +748,7 @@ class QASystem(object):
         tf.summary.scalar("em", em)
 
         merged = tf.summary.merge_all()
+        summary = sess.run(merged, feed_dict=feed_dict(False))
 
         if log:
             logging.info(
@@ -775,7 +778,7 @@ class QASystem(object):
         best_score = 0.
         print("Questions_masks")
 
-        train_writer = tf.summary.FileWriter(LOGDIR + '/train')
+        train_writer = tf.summary.FileWriter(LOGDIR + 'train')
         train_writer.add_graph(session.graph)
         saver = tf.train.Saver()
 
