@@ -26,7 +26,7 @@ tf.app.flags.DEFINE_integer("question_size", 100, "The max size of questions.")
 tf.app.flags.DEFINE_integer("paragraph_size", 766,
                             "The output size of your model.")
 tf.app.flags.DEFINE_integer(
-    "output_size", 100, "The output size of your model.")
+    "output_size", 10, "The output size of your model.")
 tf.app.flags.DEFINE_integer("embedding_size", 100,
                             "Size of the pretrained vocabulary.")
 tf.app.flags.DEFINE_string("data_dir", "data/squad",

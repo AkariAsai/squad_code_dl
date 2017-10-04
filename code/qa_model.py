@@ -234,6 +234,18 @@ class Decoder(object):
 
                     # W_pH_p + W_th_{i-1} + b_q
                     # The shape is (batch_size, output_size, 1), R^{l x 1}
+                    if time_step == 0:
+                        print("p_state shape : ")
+                        print(tf.shape(p_state))
+                        print("W_p shape : ")
+                        print(tf.shape(W_p))
+                        print("state shape : ")
+                        print(tf.shape(state))
+                        print("W_r shape : ")
+                        print(tf.shape(W_r))
+                        print("b_p shape : ")
+                        print(tf.shape(b_p))
+
                     p_intm = tf.matmul(p_state, W_p) + \
                         tf.matmul(state, W_r) + b_p
 
@@ -550,9 +562,13 @@ class QASystem(object):
             end_index_loss: The op to calculate the loss for the end index prediction.
         """
         preds = np.array(self.preds)
+        print(preds[1])
+        for i in range(len(preds[0])):
+            print(preds[0][i])
+
         with vs.variable_scope("start_index_loss"):
             loss_tensor = tf.boolean_mask(tf.nn.sparse_softmax_cross_entropy_with_logits(
-                logits=self.preds[0], labels=self.start_labels_placeholder), self.p_mask_placeholder)
+                logits=preds[0], labels=self.start_labels_placeholder), self.p_mask_placeholder)
             start_index_loss = tf.reduce_mean(loss_tensor, 0)
             tf.summary.scalar(
                 'start_index_cross_entroy_loss', start_index_loss)
@@ -602,8 +618,8 @@ class QASystem(object):
         _, start_index_loss_val = session.run(start_output_feed, input_feed)
         end_output_feed = [self.end_index_train_op, self.end_index_loss]
         _, end_index_loss_val = session.run(end_output_feed, input_feed)
-        print("start index loss : " + str(start_index_loss))
-        print("end index loss : " + str(end_index_loss))
+        print("start index loss : " + str(start_index_loss_val))
+        print("end index loss : " + str(end_index_loss_val))
 
         return start_index_loss_val, end_index_loss_val
 
@@ -624,7 +640,7 @@ class QASystem(object):
         so that other methods like self.answer() will be able to work properly
         :return:
         """
-        input_feed = self.create_feed_dict(train_x['Questions'], context_batch['Paragraphs'], train_x['Labels'], train_x['Questions_masks'], train_x['Paragraphs_masks'])
+        input_feed = self.create_feed_dict(train_x['Questions'], train_x['Paragraphs'], train_x['Labels'], train_x['Questions_masks'], train_x['Paragraphs_masks'])
 
         if train_x is not None:
             input_feed[self.q_placeholder] = train_x['Questions']
